@@ -1,0 +1,33 @@
+[package]
+name = "rd-platform"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+rd-core = { path = "../rd-core" }
+
+# Async
+tokio = { workspace = true }
+async-trait = { workspace = true }
+
+# Error handling
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+
+# Image processing
+image = { workspace = true }
+
+# Platform-specific dependencies
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { workspace = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+x11rb = { version = "0.13", features = ["allow-unsafe-code"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+core-graphics = "0.23"
+core-foundation = "0.9"

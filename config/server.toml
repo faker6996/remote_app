@@ -1,0 +1,4 @@
+[server]
+bind_address = "0.0.0.0:4433"
+max_sessions = 100
+relay_enabled = true

@@ -1,0 +1,59 @@
+# Rust
+/target/
+**/*.rs.bk
+*.pdb
+Cargo.lock
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Node.js (Tauri frontend)
+node_modules/
+dist/
+.parcel-cache/
+
+# Tauri
+desktop/src-tauri/target/
+desktop/src-tauri/WixTools/
+
+# Build artifacts
+*.exe
+*.dll
+*.so
+*.dylib
+*.deb
+*.rpm
+*.dmg
+*.app
+*.AppImage
+
+# Logs
+*.log
+logs/
+
+# Config (sensitive)
+*.key
+*.pem
+*.crt
+config/local.toml
+.env
+.env.local
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Test coverage
+*.profraw
+*.profdata
+coverage/
+
+# Temp files
+tmp/
+temp/
+*.tmp

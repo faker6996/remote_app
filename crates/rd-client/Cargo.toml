@@ -1,0 +1,21 @@
+[package]
+name = "rd-client"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+rd-core = { path = "../rd-core" }
+rd-codec = { path = "../rd-codec" }
+rd-transport = { path = "../rd-transport" }
+
+# Async
+tokio = { workspace = true }
+async-trait = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+
+# Error handling
+thiserror = { workspace = true }
+anyhow = { workspace = true }

@@ -1,0 +1,27 @@
+[package]
+name = "rd-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "rd-cli"
+path = "src/main.rs"
+
+[dependencies]
+rd-core = { path = "../rd-core" }
+rd-client = { path = "../rd-client" }
+rd-transport = { path = "../rd-transport" }
+
+# Async
+tokio = { workspace = true }
+
+# CLI
+clap = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+# Error handling
+anyhow = { workspace = true }

@@ -1,0 +1,17 @@
+[agent]
+# Device ID - will use hostname if not set
+# device_id = "my-desktop"
+
+# Server URL
+server_url = "127.0.0.1:4433"
+
+[capture]
+# Max frames per second
+max_fps = 30
+
+[encoder]
+# Codec: jpeg, h264
+codec = "jpeg"
+
+# Quality: 1-100
+quality = 80

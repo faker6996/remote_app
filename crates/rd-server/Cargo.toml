@@ -1,0 +1,30 @@
+[package]
+name = "rd-server"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "rd-server"
+path = "src/main.rs"
+
+[dependencies]
+rd-core = { path = "../rd-core" }
+rd-transport = { path = "../rd-transport" }
+
+# Async
+tokio = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+# Config
+figment = { workspace = true }
+serde = { workspace = true }
+
+# Error handling
+anyhow = { workspace = true }
+
+# Collections
+dashmap = "6.1"

@@ -1,0 +1,32 @@
+[package]
+name = "rd-agent"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "rd-agent"
+path = "src/main.rs"
+
+[dependencies]
+rd-core = { path = "../rd-core" }
+rd-codec = { path = "../rd-codec" }
+rd-transport = { path = "../rd-transport" }
+rd-platform = { path = "../rd-platform" }
+
+# Async
+tokio = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+# Config
+figment = { workspace = true }
+serde = { workspace = true }
+
+# Error handling
+anyhow = { workspace = true }
+
+# Utilities
+hostname = "0.4"
