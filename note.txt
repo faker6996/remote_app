@@ -1,0 +1,10 @@
+# Terminal 1
+RUST_LOG=info cargo run --bin rd-server
+
+# Terminal 2
+RUST_LOG=info cargo run --bin rd-agent
+
+# Terminal 3
+cargo run --bin rd-cli -- debug -s 127.0.0.1:4433
+
+source ~/.cargo/env

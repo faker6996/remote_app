@@ -42,10 +42,13 @@ impl Default for QuicClient {
 
 /// Configure the QUIC client with TLS settings
 fn configure_client() -> ClientConfig {
-    let crypto = rustls::ClientConfig::builder()
+    let mut crypto = rustls::ClientConfig::builder()
         .dangerous()
         .with_custom_certificate_verifier(SkipServerVerification::new())
         .with_no_client_auth();
+    
+    // Must match server's ALPN protocol
+    crypto.alpn_protocols = vec![b"rdp/1".to_vec()];
     
     ClientConfig::new(Arc::new(
         quinn::crypto::rustls::QuicClientConfig::try_from(crypto).unwrap()
