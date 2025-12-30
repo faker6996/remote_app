@@ -58,6 +58,12 @@ pub enum InjectionError {
     
     #[error("Invalid input event: {0}")]
     InvalidEvent(String),
+    
+    #[error("Initialization failed: {0}")]
+    InitializationFailed(String),
+    
+    #[error("Unsupported event type")]
+    UnsupportedEvent,
 }
 
 #[derive(Debug, Error)]

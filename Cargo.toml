@@ -9,6 +9,7 @@ members = [
     "crates/rd-agent",
     "crates/rd-client",
     "crates/rd-cli",
+    "crates/rd-signaling",
 ]
 exclude = [
     "rd-desktop/src-tauri",

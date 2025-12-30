@@ -1,0 +1,28 @@
+[package]
+name = "rd-signaling"
+version = "0.1.0"
+edition = "2021"
+description = "WebRTC signaling server for remote desktop P2P connections"
+
+[dependencies]
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# WebSocket
+axum = { version = "0.7", features = ["ws"] }
+tokio-tungstenite = "0.21"
+
+# JSON
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Utilities
+uuid = { version = "1", features = ["v4", "serde"] }
+dashmap = "5"
+rand = "0.8"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[[bin]]
+name = "rd-signaling"
+path = "src/main.rs"

@@ -13,28 +13,89 @@ use screencapturekit::{
     sc_stream_configuration::SCStreamConfiguration,
     cm_sample_buffer::CMSampleBuffer,
 };
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::watch;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
+
+static FRAME_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+/// Shared dimensions from display (since CVPixelBuffer in this crate version doesn't expose width/height)
+struct DisplayDimensions {
+    width: u32,
+    height: u32,
+}
 
 struct StreamHandler {
     tx: watch::Sender<Option<ScreenFrame>>,
+    dimensions: Arc<DisplayDimensions>,
 }
 
 impl StreamOutput for StreamHandler {
-    fn did_output_sample_buffer(&self, _sample: CMSampleBuffer, of_type: SCStreamOutputType) {
+    fn did_output_sample_buffer(&self, sample: CMSampleBuffer, of_type: SCStreamOutputType) {
         match of_type {
             SCStreamOutputType::Screen => {
-                debug!("macOS: Frame callback received");
-                // Dummy frame for POC
-                let frame = ScreenFrame {
-                    sequence: 0,
-                    timestamp: 0, // Should use system time
-                    data: vec![255, 0, 0, 255] .repeat(100 * 100), // 100x100 Red
-                    width: 100,
-                    height: 100,
-                    format: FrameFormat::Raw,
+                // Get pixel buffer from sample
+                let pixel_buffer = match &sample.pixel_buffer {
+                    Some(pb) => pb,
+                    None => {
+                        warn!("macOS: No pixel buffer in sample");
+                        return;
+                    }
                 };
+
+                // Lock the buffer for reading (using crate's API which has typo "adress")
+                if !pixel_buffer.lock() {
+                    warn!("macOS: Failed to lock pixel buffer");
+                    return;
+                }
+
+                // Use dimensions from display (since this crate version doesn't expose CVPixelBufferGetWidth etc)
+                let width = self.dimensions.width;
+                let height = self.dimensions.height;
+                let bytes_per_row = width * 4; // BGRA = 4 bytes per pixel, assuming no padding
+                
+                // Get raw pixel data pointer (note: crate has typo "adress")
+                let base_ptr = pixel_buffer.get_base_adress();
+                if base_ptr.is_null() {
+                    warn!("macOS: Null base address");
+                    pixel_buffer.unlock();
+                    return;
+                }
+
+                // Copy pixel data
+                let data_size = (width * height * 4) as usize;
+                let data = unsafe {
+                    let base = base_ptr as *const u8;
+                    std::slice::from_raw_parts(base, data_size).to_vec()
+                };
+
+                // Unlock the buffer
+                pixel_buffer.unlock();
+
+                // Get timestamp
+                let timestamp = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .map(|d| d.as_millis() as u64)
+                    .unwrap_or(0);
+
+                let sequence = FRAME_SEQUENCE.fetch_add(1, Ordering::SeqCst);
+
+                debug!(
+                    "macOS: Captured frame {}x{} (data_len={})",
+                    width, height, data.len()
+                );
+
+                let frame = ScreenFrame {
+                    sequence,
+                    timestamp,
+                    data,
+                    width,
+                    height,
+                    format: FrameFormat::Raw, // BGRA format from macOS
+                };
+                
                 let _ = self.tx.send(Some(frame));
             }
             _ => {}
@@ -47,8 +108,6 @@ impl StreamErrorHandler for StreamHandler {
         error!("Stream error occurred");
     }
 }
-
-
 
 pub struct MacOSScreenCapture {
     display_id: u32,
@@ -72,7 +131,6 @@ impl MacOSScreenCapture {
         
         let displays = content.displays;
         if displays.is_empty() {
-             // Assuming DisplayNotFound takes u32 based on error
             return Err(CaptureError::DisplayNotFound(0));
         }
         
@@ -85,34 +143,25 @@ impl MacOSScreenCapture {
         let width = display.width as u32;
         let height = display.height as u32;
         
-        let filter = SCContentFilter::new(InitParams::Display(display));
+        let display_id = display.display_id;
         
+        info!("macOS: Capturing display {} ({}x{})", display_id, width, height);
+        
+        let filter = SCContentFilter::new(InitParams::Display(display));
         let config = SCStreamConfiguration::from_size(width, height, false);
         
-        // Set frame rate manually if methods exist, otherwise rely on default
-        // CMTime construction:
-        // config.set_minimum_frame_interval(CMTime { value: 1, timescale: 60, flags: 0, epoch: 0 }); 
-        // Need to check if setters exist or if it's builder pattern.
-        // Assuming builder pattern based on previous error `minimum_frame_interval` existed but arg was wrong type?
-        // Actually error `method not found` was for `new`.
-        
         let (tx, rx) = watch::channel(None);
-        let handler = StreamHandler { tx };
+        let dimensions = Arc::new(DisplayDimensions { width, height });
+        let handler = StreamHandler { tx, dimensions };
         
-        // Create stream
+        // Create and start stream
         let stream = SCStream::new(filter, config, handler);
-        // stream.add_stream_output(handler, type);
-        // Actually new() usually returns the stream.
-        // I need to check how to start it.
-        // stream.start_capture().await?;
+        stream.start_capture().map_err(|e| CaptureError::CaptureFailed(format!("Start failed: {:?}", e)))?;
         
         self.stream = Some(stream);
         self.rx = Some(rx);
         
-        if let Some(stream) = &self.stream {
-            stream.start_capture().map_err(|e| CaptureError::CaptureFailed(format!("Start failed: {:?}", e)))?;
-        }
-        
+        info!("macOS: Stream started successfully");
         Ok(())
     }
 }
@@ -122,7 +171,6 @@ impl ScreenCapture for MacOSScreenCapture {
     async fn capture(&mut self) -> Result<ScreenFrame, CaptureError> {
         if self.stream.is_none() {
             self.start_stream().await?;
-            info!("macOS: Stream started");
         }
         
         let rx = self.rx.as_mut().ok_or(CaptureError::InitializationFailed("No receiver".into()))?;
@@ -135,11 +183,24 @@ impl ScreenCapture for MacOSScreenCapture {
     }
 
     async fn get_displays(&self) -> Result<Vec<DisplayInfo>, CaptureError> {
-        Ok(vec![])
+        let content = SCShareableContent::current();
+        let displays = content.displays.iter().map(|d| DisplayInfo {
+            id: d.display_id,
+            name: format!("Display {}", d.display_id),
+            width: d.width as u32,
+            height: d.height as u32,
+            x: 0, // SCDisplay doesn't expose position
+            y: 0,
+            is_primary: d.display_id == 0,
+        }).collect();
+        Ok(displays)
     }
     
     async fn set_target_display(&mut self, display_id: u32) -> Result<(), CaptureError> {
         self.display_id = display_id;
+        // Stop current stream if running, will restart on next capture
+        self.stream = None;
+        self.rx = None;
         Ok(())
     }
 }
