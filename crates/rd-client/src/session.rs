@@ -20,7 +20,7 @@ pub struct RemoteSession {
 
 impl RemoteSession {
     /// Create a new remote session
-    pub async fn new(transport: Arc<tokio::sync::Mutex<dyn Transport>>) -> Result<Self, ApplicationError> {
+    pub async fn new(transport: Arc<tokio::sync::Mutex<dyn Transport>>) -> std::result::Result<Self, ApplicationError> {
         let decoder = Arc::new(tokio::sync::Mutex::new(JpegDecoder::new()));
         let (tx, rx) = mpsc::unbounded_channel();
         
@@ -67,7 +67,7 @@ impl RemoteSession {
     }
     
     /// Connect to a remote agent
-    pub async fn connect(&mut self, agent_device_id: String) -> Result<SessionId, ApplicationError> {
+    pub async fn connect(&mut self, agent_device_id: String) -> std::result::Result<SessionId, ApplicationError> {
         info!("Requesting session with agent: {}", agent_device_id);
         
         // Send session request
@@ -96,7 +96,7 @@ impl RemoteSession {
     }
     
     /// Send an input event
-    pub async fn send_input(&mut self, event: InputEvent) -> Result<(), ApplicationError> {
+    pub async fn send_input(&mut self, event: InputEvent) -> std::result::Result<(), ApplicationError> {
         let timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -112,7 +112,7 @@ impl RemoteSession {
     }
     
     /// Disconnect from the session
-    pub async fn disconnect(&mut self) -> Result<(), ApplicationError> {
+    pub async fn disconnect(&mut self) -> std::result::Result<(), ApplicationError> {
         info!("Disconnecting session");
         
         self.transport

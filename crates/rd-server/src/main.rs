@@ -8,6 +8,11 @@ use anyhow::Result;
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Install default crypto provider for rustls
+    rustls::crypto::aws_lc_rs::default_provider()
+        .install_default()
+        .expect("Failed to install rustls crypto provider");
+    
     // Initialize logging
     tracing_subscriber::fmt::init();
     

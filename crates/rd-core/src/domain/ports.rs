@@ -10,13 +10,13 @@ use super::error::*;
 #[async_trait]
 pub trait ScreenCapture: Send + Sync {
     /// Capture a single frame from the screen
-    async fn capture(&mut self) -> Result<ScreenFrame, CaptureError>;
+    async fn capture(&mut self) -> std::result::Result<ScreenFrame, CaptureError>;
     
     /// Get information about available displays
-    async fn get_displays(&self) -> Result<Vec<DisplayInfo>, CaptureError>;
+    async fn get_displays(&self) -> std::result::Result<Vec<DisplayInfo>, CaptureError>;
     
     /// Set the target display to capture (if multiple displays exist)
-    async fn set_target_display(&mut self, display_id: u32) -> Result<(), CaptureError>;
+    async fn set_target_display(&mut self, display_id: u32) -> std::result::Result<(), CaptureError>;
 }
 
 // ============================================================================
@@ -27,10 +27,10 @@ pub trait ScreenCapture: Send + Sync {
 #[async_trait]
 pub trait InputInjector: Send + Sync {
     /// Inject a single input event
-    async fn inject(&mut self, event: InputEvent) -> Result<(), InjectionError>;
+    async fn inject(&mut self, event: InputEvent) -> std::result::Result<(), InjectionError>;
     
     /// Inject multiple input events in sequence
-    async fn inject_batch(&mut self, events: Vec<InputEvent>) -> Result<(), InjectionError> {
+    async fn inject_batch(&mut self, events: Vec<InputEvent>) -> std::result::Result<(), InjectionError> {
         for event in events {
             self.inject(event).await?;
         }
@@ -46,20 +46,20 @@ pub trait InputInjector: Send + Sync {
 #[async_trait]
 pub trait Encoder: Send + Sync {
     /// Encode a screen frame
-    async fn encode(&mut self, frame: &ScreenFrame) -> Result<Vec<u8>, CodecError>;
+    async fn encode(&mut self, frame: &ScreenFrame) -> std::result::Result<Vec<u8>, CodecError>;
     
     /// Get encoder configuration
     fn config(&self) -> &EncoderConfig;
     
     /// Update encoder configuration
-    fn set_config(&mut self, config: EncoderConfig) -> Result<(), CodecError>;
+    fn set_config(&mut self, config: EncoderConfig) -> std::result::Result<(), CodecError>;
 }
 
 /// Trait for decoding screen frames
 #[async_trait]
 pub trait Decoder: Send + Sync {
     /// Decode encoded data back to a screen frame
-    async fn decode(&mut self, data: &[u8]) -> Result<ScreenFrame, CodecError>;
+    async fn decode(&mut self, data: &[u8]) -> std::result::Result<ScreenFrame, CodecError>;
     
     /// Get the codec type this decoder handles
     fn codec_type(&self) -> CodecType;
@@ -70,7 +70,7 @@ pub trait Decoder: Send + Sync {
 // ============================================================================
 
 /// Protocol message wrapper
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum ProtocolMessage {
     // Handshake & Auth
     Hello {
@@ -131,13 +131,13 @@ pub enum ProtocolMessage {
 #[async_trait]
 pub trait Transport: Send + Sync {
     /// Send a protocol message
-    async fn send(&mut self, message: ProtocolMessage) -> Result<(), TransportError>;
+    async fn send(&mut self, message: ProtocolMessage) -> std::result::Result<(), TransportError>;
     
     /// Receive a protocol message
-    async fn receive(&mut self) -> Result<ProtocolMessage, TransportError>;
+    async fn receive(&mut self) -> std::result::Result<ProtocolMessage, TransportError>;
     
     /// Close the transport connection
-    async fn close(&mut self) -> Result<(), TransportError>;
+    async fn close(&mut self) -> std::result::Result<(), TransportError>;
     
     /// Check if the transport is still connected
     fn is_connected(&self) -> bool;
@@ -151,13 +151,13 @@ pub trait Transport: Send + Sync {
 #[async_trait]
 pub trait Authenticator: Send + Sync {
     /// Authenticate a token and return the associated peer ID
-    async fn authenticate(&self, token: &AuthToken) -> Result<PeerId, AuthError>;
+    async fn authenticate(&self, token: &AuthToken) -> std::result::Result<PeerId, AuthError>;
     
     /// Generate a new token for a device
-    async fn generate_token(&self, device_id: &str) -> Result<AuthToken, AuthError>;
+    async fn generate_token(&self, device_id: &str) -> std::result::Result<AuthToken, AuthError>;
     
     /// Revoke a token
-    async fn revoke_token(&self, token: &AuthToken) -> Result<(), AuthError>;
+    async fn revoke_token(&self, token: &AuthToken) -> std::result::Result<(), AuthError>;
 }
 
 // ============================================================================
@@ -168,17 +168,17 @@ pub trait Authenticator: Send + Sync {
 #[async_trait]
 pub trait SessionRepository: Send + Sync {
     /// Create a new session
-    async fn create(&mut self, session: Session) -> Result<(), RepositoryError>;
+    async fn create(&mut self, session: Session) -> std::result::Result<(), RepositoryError>;
     
     /// Find a session by ID
-    async fn find_by_id(&self, id: SessionId) -> Result<Option<Session>, RepositoryError>;
+    async fn find_by_id(&self, id: SessionId) -> std::result::Result<Option<Session>, RepositoryError>;
     
     /// Update a session
-    async fn update(&mut self, session: Session) -> Result<(), RepositoryError>;
+    async fn update(&mut self, session: Session) -> std::result::Result<(), RepositoryError>;
     
     /// Delete a session
-    async fn delete(&mut self, id: SessionId) -> Result<(), RepositoryError>;
+    async fn delete(&mut self, id: SessionId) -> std::result::Result<(), RepositoryError>;
     
     /// List all active sessions
-    async fn list_active(&self) -> Result<Vec<Session>, RepositoryError>;
+    async fn list_active(&self) -> std::result::Result<Vec<Session>, RepositoryError>;
 }

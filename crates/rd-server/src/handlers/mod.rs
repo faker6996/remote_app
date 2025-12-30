@@ -16,7 +16,7 @@ pub async fn handle_connection(connection: Connection, state: ServerState) -> Re
     
     // Wait for Hello message
     match transport.receive().await {
-        Ok(ProtocolMessage::Hello { version, device_id, platform }) => {
+        Ok(ProtocolMessage::Hello { version: _, device_id, platform }) => {
             info!("Received Hello from device: {} (platform: {:?})", device_id, platform);
             
             // TODO: Validate version
@@ -55,7 +55,7 @@ pub async fn handle_connection(connection: Connection, state: ServerState) -> Re
 
 async fn handle_message(
     msg: ProtocolMessage,
-    state: &ServerState,
+    _state: &ServerState,
     transport: &mut QuicTransport,
 ) -> Result<()> {
     match msg {

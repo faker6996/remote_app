@@ -2,12 +2,18 @@ mod config;
 mod capture_loop;
 mod input_handler;
 
+use rd_core::domain::ports::Transport;
 use tracing::{info, error};
 use tracing_subscriber;
 use anyhow::Result;
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Install default crypto provider for rustls
+    rustls::crypto::aws_lc_rs::default_provider()
+        .install_default()
+        .expect("Failed to install rustls crypto provider");
+    
     // Initialize logging
     tracing_subscriber::fmt::init();
     
@@ -26,10 +32,20 @@ async fn main() -> Result<()> {
     let mut transport = rd_transport::QuicTransport::new(connection).await?;
     
     // Send Hello
+    let platform = if cfg!(target_os = "windows") {
+        rd_core::domain::models::Platform::Windows
+    } else if cfg!(target_os = "linux") {
+        rd_core::domain::models::Platform::Linux
+    } else if cfg!(target_os = "macos") {
+        rd_core::domain::models::Platform::MacOS
+    } else {
+        rd_core::domain::models::Platform::Linux
+    };
+    
     transport.send(rd_core::domain::ports::ProtocolMessage::Hello {
         version: 1,
         device_id: config.device_id.clone(),
-        platform: std::env::consts::OS.parse().unwrap_or(rd_core::domain::models::Platform::Linux),
+        platform,
     }).await?;
     
     info!("Connected to server");

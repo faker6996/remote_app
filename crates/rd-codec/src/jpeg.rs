@@ -29,7 +29,7 @@ impl JpegEncoder {
 
 #[async_trait]
 impl Encoder for JpegEncoder {
-    async fn encode(&mut self, frame: &ScreenFrame) -> Result<Vec<u8>, CodecError> {
+    async fn encode(&mut self, frame: &ScreenFrame) -> std::result::Result<Vec<u8>, CodecError> {
         debug!(
             "Encoding frame {}x{} with quality {}",
             frame.width, frame.height, self.config.quality
@@ -85,7 +85,7 @@ impl Encoder for JpegEncoder {
         &self.config
     }
     
-    fn set_config(&mut self, config: EncoderConfig) -> Result<(), CodecError> {
+    fn set_config(&mut self, config: EncoderConfig) -> std::result::Result<(), CodecError> {
         if config.codec != CodecType::Jpeg {
             return Err(CodecError::InvalidConfig(
                 "JpegEncoder only supports JPEG codec".to_string()
@@ -113,7 +113,7 @@ impl Default for JpegDecoder {
 
 #[async_trait]
 impl Decoder for JpegDecoder {
-    async fn decode(&mut self, data: &[u8]) -> Result<ScreenFrame, CodecError> {
+    async fn decode(&mut self, data: &[u8]) -> std::result::Result<ScreenFrame, CodecError> {
         debug!("Decoding JPEG data ({} bytes)", data.len());
         
         let img = image::load_from_memory_with_format(data, image::ImageFormat::Jpeg)

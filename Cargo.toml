@@ -53,7 +53,19 @@ sha2 = "0.10"
 # Time
 chrono = { version = "0.4", features = ["serde"] }
 
-# Platform-specific (conditional)
+# Image processing
+image = "0.25"
+
+# Utilities
+hostname = "0.4"
+
+# CLI
+clap = { version = "4.5", features = ["derive"] }
+
+# TLS certificate generation
+rcgen = "0.13"
+
+# Platform-specific dependencies
 [workspace.dependencies.windows]
 version = "0.58"
 features = [
@@ -65,11 +77,9 @@ features = [
     "Win32_System_Threading",
 ]
 
-# CLI
-clap = { version = "4.5", features = ["derive"] }
-
-# Image processing
-image = "0.25"
+[workspace.dependencies.x11rb]
+version = "0.13"
+features = ["allow-unsafe-code"]
 
 [profile.release]
 opt-level = 3

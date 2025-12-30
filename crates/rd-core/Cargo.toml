@@ -17,6 +17,9 @@ serde = { workspace = true }
 # Error handling
 thiserror = { workspace = true }
 
+# Logging
+tracing = { workspace = true }
+
 # Utilities
 uuid = { workspace = true }
 chrono = { workspace = true }

@@ -64,7 +64,7 @@ impl Transport for QuicTransport {
         send_stream
             .write_all(&frame)
             .await
-            .map_err(|e| TransportError::IoError(e))?;
+            .map_err(|_| TransportError::Closed)?;
         
         debug!("Sent message ({} bytes)", data.len());
         
@@ -82,7 +82,7 @@ impl Transport for QuicTransport {
             .read_exact(&mut len_buf)
             .await
             .map_err(|e| match e {
-                quinn::ReadExactError::FinishedEarly => TransportError::Closed,
+                quinn::ReadExactError::FinishedEarly(_) => TransportError::Closed,
                 quinn::ReadExactError::ReadError(e) => TransportError::IoError(e.into()),
             })?;
         
@@ -94,7 +94,7 @@ impl Transport for QuicTransport {
             .read_exact(&mut data)
             .await
             .map_err(|e| match e {
-                quinn::ReadExactError::FinishedEarly => TransportError::Closed,
+                quinn::ReadExactError::FinishedEarly(_) => TransportError::Closed,
                 quinn::ReadExactError::ReadError(e) => TransportError::IoError(e.into()),
             })?;
         
