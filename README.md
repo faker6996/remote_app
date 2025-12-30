@@ -3,15 +3,31 @@
 A cross-platform remote desktop application built with Rust and Tauri, featuring low-latency screen streaming and remote control capabilities.
 
 [![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](LICENSE)
-[![Rust Version](https://img.shields.io/badge/rust-1.80%2B-orange.svg)](https://www.rust-lang.org/)
+[![Rust Version](https://img.shields.io/badge/rust-1.92%2B-orange.svg)](https://www.rust-lang.org/)
+
+## 🚧 Implementation Status
+
+**Current Version**: v0.1.0 (Alpha)
+
+- ✅ **Core Architecture**: Clean Architecture with 9 Rust crates
+- ✅ **QUIC Transport**: Fully working with TLS 1.3 and ALPN protocol
+- ✅ **JPEG Codec**: Screen frame encoding/decoding implemented
+- ✅ **Server Binary**: QUIC server running on port 4433
+- ✅ **Agent Binary**: Connects to server, sends device info
+- ✅ **CLI Tool**: Debug and connection testing utility
+- ✅ **Desktop UI**: Tauri v2 + React application with connection panel
+- 🚧 **Screen Capture**: Platform-specific implementations (stubs only)
+- 🚧 **Input Injection**: Platform-specific implementations (stubs only)
+- ⏳ **H.264 Codec**: Planned for higher compression
+- ⏳ **NAT Traversal**: STUN/TURN support planned
 
 ## Features
 
-- 🚀 **Low Latency**: Real-time screen streaming with < 200ms end-to-end delay
-- 🔒 **Secure**: QUIC transport with TLS 1.3 encryption by default
-- 🎯 **Cross-Platform**: Supports Windows, Linux, and macOS
-- 🖥️ **Modern UI**: Desktop client built with Tauri (Rust + React)
-- ⚡ **Performance**: Hardware-accelerated screen capture (DXGI on Windows)
+- 🚀 **Low Latency**: Target < 200ms end-to-end delay (architecture ready)
+- 🔒 **Secure**: QUIC transport with TLS 1.3 encryption (implemented)
+- 🎯 **Cross-Platform**: Supports Windows, Linux, macOS (in progress)
+- 🖥️ **Modern UI**: Desktop client built with Tauri v2 + React (functional)
+- ⚡ **Performance**: Hardware-accelerated screen capture planned (DXGI on Windows)
 - 🧩 **Clean Architecture**: Modular design with hexagonal/ports-and-adapters pattern
 
 ## Architecture
@@ -19,18 +35,20 @@ A cross-platform remote desktop application built with Rust and Tauri, featuring
 The project is organized as a Rust workspace monorepo:
 
 ```
-remote-desktop/
+remote_app/
 ├── crates/           # Core Rust libraries and binaries
-│   ├── rd-core       # Domain models and business logic
-│   ├── rd-codec      # Video encoding/decoding (JPEG, H.264)
-│   ├── rd-transport  # QUIC network transport
-│   ├── rd-platform   # OS-specific implementations
-│   ├── rd-server     # Signaling & relay server
-│   ├── rd-agent      # Agent service (runs on host machine)
-│   ├── rd-client     # Client library
-│   └── rd-cli        # CLI tool
-├── desktop/          # Tauri desktop application
-└── docs/             # Documentation
+│   ├── rd-core       # ✅ Domain models, ports/traits, error types
+│   ├── rd-codec      # ✅ JPEG encoder/decoder (H.264 planned)
+│   ├── rd-transport  # ✅ QUIC client/server with TLS 1.3
+│   ├── rd-platform   # 🚧 OS-specific implementations (stubs)
+│   ├── rd-server     # ✅ Signaling & relay server (running)
+│   ├── rd-agent      # ✅ Agent service (connects to server)
+│   ├── rd-client     # ✅ Client library for remote sessions
+│   └── rd-cli        # ✅ CLI tool for debugging/testing
+├── rd-desktop/       # ✅ Tauri v2 desktop application
+│   ├── src/          # React + TypeScript frontend
+│   └── src-tauri/    # Rust backend with Tauri commands
+└── docs/             # ✅ Architecture and API documentation
 ```
 
 See [docs/architecture.md](docs/architecture.md) for detailed architecture documentation.
@@ -39,122 +57,145 @@ See [docs/architecture.md](docs/architecture.md) for detailed architecture docum
 
 ### Prerequisites
 
-- **Rust 1.80+**: [Install Rust](https://rustup.rs/)
+- **Rust 1.92+**: [Install Rust](https://rustup.rs/)
 - **Node.js 20+**: [Install Node.js](https://nodejs.org/) (for Tauri frontend)
 - **Platform-specific**:
-  - Windows: Visual Studio 2019+ with C++ development tools
-  - Linux: `libx11-dev`, `libxrandr-dev`, `libxtst-dev`
-  - macOS: Xcode Command Line Tools
+  - **Linux**: `libwebkit2gtk-4.1-dev`, `libgtk-3-dev`, `librsvg2-dev`, `libayatana-appindicator3-dev`
+  - **Windows**: Visual Studio 2019+ with C++ development tools
+  - **macOS**: Xcode Command Line Tools
 
 ### Build & Run
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/remote-desktop.git
-cd remote-desktop
+git clone <repo-url>
+cd remote_app
+
+# Install Rust (if needed)
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source "$HOME/.cargo/env"
 
 # Build Rust workspace
-cargo build --release
+cargo build --workspace
 
-# Run the server
-./target/release/rd-server
+# Run the server (Terminal 1)
+RUST_LOG=info cargo run --bin rd-server
 
-# Run the agent (on the machine to be controlled)
-./target/release/rd-agent
+# Run the agent (Terminal 2)
+RUST_LOG=info cargo run --bin rd-agent
 
-# Run the desktop client
-cd desktop
+# Run the desktop client (Terminal 3)
+cd rd-desktop
 npm install
 npm run tauri dev
 ```
 
 ## Components
 
-### 1. Server (`rd-server`)
+### 1. Server (`rd-server`) ✅
 
 Signaling and relay server for coordinating connections between clients and agents.
 
+**Status**: Fully functional, accepts QUIC connections on port 4433
+
 ```bash
 # Run server
-cargo run -p rd-server -- --config config/server.toml
+RUST_LOG=info cargo run --bin rd-server
 
-# Default port: 4433 (QUIC)
+# With CLI options
+cargo run --bin rd-server -- --version
+cargo run --bin rd-server -- --help
+
+# Default: 0.0.0.0:4433 (QUIC with TLS 1.3)
 ```
 
-### 2. Agent (`rd-agent`)
+**Features**:
+
+- ✅ QUIC server with ALPN protocol "rdp/1"
+- ✅ TLS 1.3 encryption with rustls
+- ✅ Connection state management
+- 🚧 Message routing (partial)
+
+### 2. Agent (`rd-agent`) ✅
 
 Service that runs on the host machine, captures screen, and handles remote input.
 
+**Status**: Connects to server, sends device information
+
 ```bash
 # Run agent
-cargo run -p rd-agent -- --config config/agent.toml
+RUST_LOG=info cargo run --bin rd-agent
 
-# Install as service (Windows)
-rd-agent install
-
-# Install as systemd service (Linux)
-sudo cp scripts/rd-agent.service /etc/systemd/system/
-sudo systemctl enable rd-agent
-sudo systemctl start rd-agent
+# Agent connects to server at 127.0.0.1:4433
+# Device ID: <hostname> (e.g., "bachtv")
 ```
 
-### 3. Desktop Client (`desktop/`)
+**Features**:
 
-Tauri-based desktop application for viewing and controlling remote machines.
+- ✅ QUIC client connection
+- ✅ Device registration (Hello message)
+- ✅ Platform detection (Windows/Linux/macOS)
+- 🚧 Screen capture loop (stub)
+- 🚧 Input injection (stub)
+
+### 3. Desktop Client (`rd-desktop`) ✅
+
+Tauri v2 desktop application with React frontend.
+
+**Status**: UI functional, connection logic implemented
 
 ```bash
-cd desktop
+cd rd-desktop
 npm run tauri dev    # Development mode
 npm run tauri build  # Production build
 ```
 
-### 4. CLI (`rd-cli`)
+**Features**:
 
-Command-line tool for testing and debugging.
+- ✅ Connection panel (Server + Agent ID inputs)
+- ✅ Connect/Disconnect functionality
+- ✅ Status bar with connection state
+- ✅ Canvas viewer for remote screen
+- 🚧 Frame rendering (stub)
+- 🚧 Mouse/keyboard input events (stub)
+
+### 4. CLI Tool (`rd-cli`) ✅
+
+Command-line utility for testing and debugging.
 
 ```bash
-# List available agents
-cargo run -p rd-cli -- list
+# Debug QUIC transport
+cargo run --bin rd-cli -- debug -s 127.0.0.1:4433
 
-# Connect to an agent
-cargo run -p rd-cli -- connect <agent-id>
+# List connected agents (planned)
+cargo run --bin rd-cli -- list
 
-# Debug transport
-cargo run -p rd-cli -- debug-transport
+# Connect to agent (planned)
+cargo run --bin rd-cli -- connect <agent-id>
 ```
 
-## Configuration
+## Protocol & Transport
 
-Configuration files use TOML format:
+**Current Implementation**: ✅ QUIC with TLS 1.3
 
-**Server (`config/server.toml`):**
+- **Protocol**: QUIC (UDP-based)
+- **Encryption**: TLS 1.3 via rustls
+- **ALPN**: "rdp/1"
+- **Serialization**: bincode (binary)
+- **Port**: 4433 (default)
 
-```toml
-[server]
-bind_address = "0.0.0.0:4433"
-cert_path = "certs/server.crt"
-key_path = "certs/server.key"
+**Protocol Messages** (13 types defined):
 
-[relay]
-enabled = true
-max_sessions = 100
-```
+- `Hello`, `HelloAck` - Device registration
+- `Auth`, `AuthResponse` - Authentication
+- `SessionRequest`, `SessionResponse` - Session management
+- `ScreenFrame` - Frame data with JPEG encoding
+- `InputEvent` - Mouse/keyboard events
+- `Ping`, `Pong` - Keep-alive
+- `Error`, `Disconnect` - Error handling
+- `FileTransfer` - File transfer (planned)
 
-**Agent (`config/agent.toml`):**
-
-```toml
-[agent]
-device_id = "my-desktop"
-server_url = "https://server.example.com:4433"
-
-[capture]
-max_fps = 30
-resolution = "1920x1080"
-
-[encoder]
-codec = "jpeg"
-quality = 80
-```
+See [docs/protocol.md](docs/protocol.md) for detailed protocol specification.
 
 ## Development
 
@@ -162,7 +203,7 @@ quality = 80
 
 ```bash
 # Run all tests
-cargo test
+cargo test --workspace
 
 # Run tests for a specific crate
 cargo test -p rd-core
@@ -175,54 +216,78 @@ RUST_LOG=debug cargo test
 
 ```bash
 # Format code
-cargo fmt
+cargo fmt --all
 
 # Run clippy
-cargo clippy -- -D warnings
+cargo clippy --workspace -- -D warnings
+
+# Fix simple warnings
+cargo fix --workspace --allow-dirty
 ```
 
 ### Building Documentation
 
 ```bash
-# Generate API docs
+# Generate Rust API docs
 cargo doc --no-deps --open
 
-# See architecture docs
+# Read architecture documentation
 cat docs/architecture.md
+cat docs/protocol.md
+cat docs/development.md
 ```
 
 ## Platform Support
 
-| Platform      | Screen Capture           | Input Injection  | Status     |
-| ------------- | ------------------------ | ---------------- | ---------- |
-| Windows 10/11 | DXGI Desktop Duplication | WinAPI SendInput | ✅ Stable  |
-| Ubuntu 22.04+ | X11 (x11rb)              | XTest            | 🚧 Beta    |
-| macOS 12+     | CoreGraphics             | CGEvent          | 📋 Planned |
+| Platform      | Screen Capture             | Input Injection     | Status     |
+| ------------- | -------------------------- | ------------------- | ---------- |
+| Windows 10/11 | DXGI (planned)             | SendInput (planned) | ⏳ Planned |
+| Ubuntu 22.04+ | X11 (planned)              | XTest (planned)     | ⏳ Planned |
+| macOS 12+     | ScreenCaptureKit (planned) | CGEvent (planned)   | ⏳ Planned |
+
+**Note**: Platform-specific implementations are currently stubs. Transport layer and UI are functional.
+| macOS 12+ | CoreGraphics | CGEvent | 📋 Planned |
 
 ## Security
 
-- **Transport**: QUIC with TLS 1.3 (encrypted by default)
-- **Authentication**: Token-based auth (V1), user accounts planned
+- **Transport**: ✅ QUIC with TLS 1.3 (encrypted by default, fully implemented)
+- **Certificate**: ⚠️ Self-signed certificates for development (replace for production)
+- **Authentication**: 🚧 Basic device ID only (token-based auth planned)
 - **Permissions**: OS-level permissions required for screen capture and input injection
 
-See [docs/security.md](docs/security.md) for security best practices.
+⚠️ **Development Warning**: Current version uses self-signed certificates and basic authentication. Not suitable for production use.
 
 ## Roadmap
 
-- [x] Core architecture and domain models
-- [x] QUIC transport layer
-- [x] Windows screen capture (DXGI)
-- [ ] Basic Tauri UI
-- [ ] Linux X11 support
+### ✅ Completed (v0.1.0)
+
+- [x] Core architecture with Clean Architecture pattern
+- [x] Domain models, ports, and error types
+- [x] QUIC transport layer with TLS 1.3
+- [x] JPEG codec implementation
+- [x] Server binary (QUIC server on port 4433)
+- [x] Agent binary (connects and registers)
+- [x] CLI debugging tool
+- [x] Tauri v2 desktop UI with React
+
+### 🚧 In Progress
+
+- [ ] Platform-specific screen capture (DXGI, X11, ScreenCaptureKit)
+- [ ] Platform-specific input injection
+- [ ] End-to-end frame streaming
+- [ ] Desktop UI frame rendering
+
+### ⏳ Planned (v0.2.0+)
+
 - [ ] H.264 hardware encoding
 - [ ] NAT traversal with STUN/TURN
-- [ ] User accounts and authentication
-- [ ] Mobile client (Tauri mobile)
-- [ ] Audio streaming
-- [ ] File transfer
+- [ ] User authentication system
+- [ ] Production TLS certificates
 - [ ] Multi-monitor support
-
-See [docs/roadmap.md](docs/roadmap.md) for detailed roadmap.
+- [ ] File transfer
+- [ ] Audio streaming
+- [ ] Mobile client (Tauri mobile)
+- [ ] Clipboard synchronization
 
 ## Contributing
 
@@ -247,12 +312,21 @@ You may choose either license for your use.
 
 - Inspired by [RustDesk](https://github.com/rustdesk/rustdesk)
 - Built with [Tauri](https://tauri.app/), [Quinn](https://github.com/quinn-rs/quinn), and [Tokio](https://tokio.rs/)
+- Protocol design inspired by modern remote desktop protocols
 
-## Contact
+## Technology Stack
 
-- GitHub Issues: [Report bugs or request features](https://github.com/your-org/remote-desktop/issues)
-- Documentation: [Full documentation](docs/)
+- **Language**: Rust 1.92.0
+- **Transport**: QUIC (quinn 0.11)
+- **TLS**: rustls 0.23 with aws-lc-rs
+- **Serialization**: bincode + serde
+- **Async Runtime**: Tokio 1.x
+- **Desktop UI**: Tauri v2 + React 18 + TypeScript
+- **Codec**: JPEG (jpeg-encoder), H.264 planned
+- **Build System**: Cargo workspaces
 
 ---
 
-**Status**: 🚧 Active Development (Pre-Alpha)
+**Status**: 🚧 Alpha Development (v0.1.0)
+
+**Last Updated**: December 30, 2025
