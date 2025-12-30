@@ -1,8 +1,8 @@
 # Rust
 /target/
+**/target/
 **/*.rs.bk
 *.pdb
-Cargo.lock
 
 # IDE
 .vscode/
@@ -15,9 +15,16 @@ Cargo.lock
 # Node.js (Tauri frontend)
 node_modules/
 dist/
+dist-ssr/
 .parcel-cache/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
 
 # Tauri
+rd-desktop/src-tauri/target/
+rd-desktop/src-tauri/WixTools/
+rd-desktop/src-tauri/gen/
 desktop/src-tauri/target/
 desktop/src-tauri/WixTools/
 
