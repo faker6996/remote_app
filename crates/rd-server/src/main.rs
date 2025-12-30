@@ -2,12 +2,24 @@ mod config;
 mod state;
 mod handlers;
 
+use clap::Parser;
 use tracing::{info, error};
 use tracing_subscriber;
 use anyhow::Result;
 
+#[derive(Parser)]
+#[command(name = "rd-server")]
+#[command(version = "0.1.0")]
+#[command(about = "Remote Desktop Server - signaling and relay server", long_about = None)]
+struct Cli {
+    /// Configuration file path
+    #[arg(short, long, default_value = "config/server.toml")]
+    config: String,
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
+    let _cli = Cli::parse();
     // Install default crypto provider for rustls
     rustls::crypto::aws_lc_rs::default_provider()
         .install_default()
