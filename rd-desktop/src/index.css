@@ -1,0 +1,317 @@
+@import "tailwindcss";
+@config "../tailwind.config.ts";
+
+:root {
+  --background: oklch(97% 0 0); /* Very light gray - subtle backdrop */
+  --foreground: oklch(25% 0 0); /* Dark charcoal - improved contrast for readability */
+
+  --card: oklch(100% 0 0); /* Pure white - elevated card surfaces */
+  --card-foreground: oklch(25% 0 0); /* Dark charcoal - card text */
+
+  --popover: oklch(100% 0 0); /* Pure white - dropdown/modal backgrounds */
+  --popover-foreground: oklch(25% 0 0); /* Dark charcoal - popup text */
+
+  /* Brand primary: Vibrant blue */
+  --primary: oklch(63% 0.238 255); /* Vibrant blue #3B82F6 - primary actions */
+  --primary-foreground: oklch(98.5% 0 0); /* Near white text on blue */
+
+  --secondary: oklch(75% 0.15 280); /* Purple/indigo tone - distinct secondary color */
+  --secondary-foreground: oklch(98.5% 0 0); /* Near white - text on secondary */
+
+  --muted: oklch(96.1% 0 0); /* Very light gray - muted backgrounds */
+  --muted-foreground: oklch(55% 0 0); /* Medium-dark gray - improved contrast for muted text */
+
+  /* Accent: soft tint of primary (~primary/20) */
+  --accent: color-mix(in oklch, var(--primary) 20%, var(--background) 80%);
+  --accent-foreground: oklch(20.5% 0 0); /* Dark gray - text on accents */
+
+  --input-focus: var(--primary); /* Focus ring color for inputs */
+  --input-disabled: oklch(96% 0 0); /* Disabled input background */
+  --input-invalid: var(--destructive); /* Invalid input color */
+
+  --destructive: oklch(70.4% 0.191 22.216); /* Vibrant red - error/delete actions */
+  --destructive-foreground: oklch(98.5% 0 0); /* Near white - text on red buttons */
+
+  --border: oklch(20.5% 0 0 / 0.15); /* 15% transparent dark - visible borders */
+  --input: oklch(20.5% 0 0 / 0.2); /* 20% transparent dark - input borders */
+  --ring: var(--primary); /* Match focus ring to primary */
+
+  --radius: 0.5rem; /* 8px border radius */
+
+  --success: oklch(59% 0.2 160); /* OKLCH Emerald green - success states (matches Tailwind emerald-600) */
+  --success-foreground: oklch(98.5% 0 0); /* Near white - text on green */
+
+  --warning: oklch(82% 0.18 90); /* OKLCH Amber yellow - warnings */
+  --warning-foreground: oklch(25% 0 0); /* Dark charcoal - text on yellow */
+
+  --info: oklch(65% 0.2 240); /* OKLCH Bright blue - info states */
+  --info-foreground: oklch(98.5% 0 0); /* Near white - text on blue */
+
+  /* Surface elevation levels for depth */
+  --surface-0: oklch(100% 0 0); /* Base surface */
+  --surface-1: oklch(99% 0 0); /* Slightly elevated */
+  --surface-2: oklch(98% 0 0); /* More elevated */
+  --surface-3: oklch(97% 0 0); /* Highest elevation */
+
+  /* Shadow system for elevation */
+  --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+
+  /* Normalized light controls */
+  color-scheme: light;
+}
+
+.dark {
+  --background: oklch(18% 0.03 255); /* Deep blue-black - softer dark backdrop with blue tint */
+  --foreground: oklch(96% 0.01 255); /* Near white with slight blue tint */
+
+  --card: oklch(22% 0.03 255); /* Dark blue-gray - elevated card surfaces */
+  --card-foreground: oklch(96% 0.01 255); /* Near white - text on cards */
+
+  --popover: oklch(24% 0.035 255); /* Medium dark blue-gray - floating elements */
+  --popover-foreground: oklch(96% 0.01 255); /* Near white - popup text */
+
+  /* Brighter primary tuned for dark surfaces (blue) */
+  --primary: oklch(70% 0.24 255); /* Brighter blue for dark mode */
+  --primary-foreground: oklch(98.5% 0 0); /* Near white text on blue */
+
+  --secondary: oklch(50% 0.15 280); /* Purple/indigo tone - distinct in dark mode */
+  --secondary-foreground: oklch(98.5% 0.01 255); /* Near white - text on secondary */
+
+  --muted: oklch(25% 0.03 255); /* Dark blue-gray - muted areas */
+  --muted-foreground: oklch(65% 0.02 255); /* Light-medium gray - improved muted text contrast */
+
+  /* Accent: soft tint of primary on dark background (~primary/20) */
+  --accent: color-mix(in oklch, var(--primary) 20%, var(--background) 80%);
+  --accent-foreground: var(--primary-foreground); /* Light text on tinted accent */
+
+  --input-focus: var(--primary); /* Focus ring color for inputs */
+  --input-disabled: oklch(25% 0.03 255); /* Disabled input background */
+  --input-invalid: var(--destructive); /* Invalid input color */
+
+  --destructive: oklch(70.4% 0.191 22.216); /* Warm red-orange - errors/danger */
+  --destructive-foreground: oklch(98.5% 0 0); /* Near white - text on red */
+
+  --border: oklch(100% 0.02 255 / 0.2); /* Visible blue-tinted borders */
+  --input: oklch(100% 0.02 255 / 0.25); /* Bright blue-tinted input borders */
+  --ring: var(--primary); /* Match focus ring to primary */
+
+  --success: oklch(64% 0.2 160); /* OKLCH Emerald green - brighter for dark mode */
+  --success-foreground: oklch(98.5% 0 0); /* Near white - text on green */
+
+  --warning: oklch(85% 0.18 90); /* OKLCH Amber yellow - brighter for dark mode */
+  --warning-foreground: oklch(25% 0 0); /* Dark charcoal - text on yellow */
+
+  --info: oklch(68% 0.2 240); /* OKLCH Bright blue - brighter for dark mode */
+  --info-foreground: oklch(98.5% 0 0); /* Near white - text on blue */
+
+  /* Surface elevation levels for depth in dark mode */
+  --surface-0: oklch(18% 0.03 255); /* Base surface */
+  --surface-1: oklch(20% 0.03 255); /* Slightly elevated */
+  --surface-2: oklch(22% 0.03 255); /* More elevated */
+  --surface-3: oklch(24% 0.03 255); /* Highest elevation */
+
+  /* Shadow system for elevation in dark mode - more subtle */
+  --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.3);
+  --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.4), 0 1px 2px -1px rgb(0 0 0 / 0.4);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.4), 0 2px 4px -2px rgb(0 0 0 / 0.4);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.4), 0 4px 6px -4px rgb(0 0 0 / 0.4);
+  --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.5), 0 8px 10px -6px rgb(0 0 0 / 0.5);
+
+  /* Normalized dark controls */
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-input-focus: var(--input-focus);
+  --color-input-disabled: var(--input-disabled);
+  --color-input-invalid: var(--input-invalid);
+  --color-surface-0: var(--surface-0);
+  --color-surface-1: var(--surface-1);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --shadow-xs: var(--shadow-xs);
+  --shadow-sm: var(--shadow-sm);
+  --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg);
+  --shadow-xl: var(--shadow-xl);
+  --font-sans: var(--font-inter);
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+
+  --animate-scan: scan 8s linear infinite;
+  --animate-spin-slow: spin-slow 20s linear infinite;
+  --animate-spin-reverse-slow: spin-reverse-slow 25s linear infinite;
+  --animate-float: float 6s ease-in-out infinite;
+  --animate-float-delayed: float 6s ease-in-out 3s infinite;
+  --animate-fade-in: fade-in 0.8s ease-out forwards;
+  --animate-slide-up: slide-up 0.8s ease-out forwards;
+  --animate-slide-in-right: slide-in-right 0.8s ease-out forwards;
+  --animate-pulse-subtle: pulse-subtle 3s infinite;
+
+  @keyframes scan {
+    0% {
+      top: -10%;
+      opacity: 0;
+    }
+    10% {
+      opacity: 1;
+    }
+    90% {
+      opacity: 1;
+    }
+    100% {
+      top: 110%;
+      opacity: 0;
+    }
+  }
+  @keyframes spin-slow {
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(360deg);
+    }
+  }
+  @keyframes spin-reverse-slow {
+    from {
+      transform: rotate(360deg);
+    }
+    to {
+      transform: rotate(0deg);
+    }
+  }
+  @keyframes float {
+    0%,
+    100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(-10px);
+    }
+  }
+  @keyframes fade-in {
+    0% {
+      opacity: 0;
+    }
+    100% {
+      opacity: 1;
+    }
+  }
+  @keyframes slide-up {
+    0% {
+      opacity: 0;
+      transform: translateY(20px);
+    }
+    100% {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  @keyframes slide-in-right {
+    0% {
+      opacity: 0;
+      transform: translateX(30px);
+    }
+    100% {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+  @keyframes pulse-subtle {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.6;
+    }
+  }
+}
+
+@layer base {
+  body {
+    background: var(--background);
+    color: var(--foreground);
+    @apply font-sans antialiased;
+    transition: background-color 200ms ease, color 200ms ease;
+  }
+
+  h1 {
+    @apply text-3xl md:text-4xl font-semibold tracking-tight;
+  }
+  h2 {
+    @apply text-2xl md:text-3xl font-semibold tracking-tight;
+  }
+  h3 {
+    @apply text-xl md:text-2xl font-semibold tracking-tight;
+  }
+  h4 {
+    @apply text-lg md:text-xl font-medium;
+  }
+  p {
+    @apply leading-relaxed;
+  }
+  small {
+    @apply text-xs text-muted-foreground;
+  }
+  a {
+    @apply text-primary underline-offset-4 hover:underline;
+  }
+
+  button {
+    @apply cursor-pointer;
+  }
+}
+
+@layer utilities {
+  .glass {
+    background: color-mix(in oklch, var(--background) 70%, transparent 30%);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid color-mix(in oklch, var(--border) 50%, transparent 50%);
+  }
+  .glass-card {
+    background: color-mix(in oklch, var(--card) 60%, transparent 40%);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid color-mix(in oklch, var(--border) 40%, transparent 60%);
+  }
+  .dark .glass-card {
+    background: color-mix(in oklch, var(--card) 50%, transparent 50%);
+    border: 1px solid color-mix(in oklch, var(--border) 60%, transparent 40%);
+  }
+
+  .scroll-area-viewport {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+    scrollbar-gutter: stable both-edges;
+  }
+}
