@@ -20,6 +20,7 @@ import {
   IconDownload,
   IconFileCheck,
   IconClipboardCheck,
+  IconPhoneOff,
 } from "@tabler/icons-react";
 
 interface ConnectionState {
@@ -512,17 +513,20 @@ function App() {
     }
   };
 
-  // Disconnect / stop
+  // Disconnect / stop session
   const handleStopConnection = async () => {
+    // 1. Immediately reset connection state in UI (0ms delay)
+    setConnState((prev) => ({
+      ...prev,
+      connected: false,
+      status: "Disconnected",
+    }));
+    setFps(0);
+    setIncomingRequest(null);
+
+    // 2. Shut down backend WebRTC and notify remote peer
     try {
       await invoke("stop_connection");
-      setConnState((prev) => ({
-        ...prev,
-        connected: false,
-        status: "Disconnected",
-      }));
-      setFps(0);
-      setIncomingRequest(null);
     } catch (error) {
       console.error("Disconnect failed:", error);
     }
@@ -1075,6 +1079,15 @@ function App() {
               title="Toggle Fullscreen"
             >
               {isFullscreen ? <IconMinimize className="size-4" /> : <IconMaximize className="size-4" />}
+            </button>
+
+            {/* Disconnect Session Button */}
+            <button
+              onClick={handleStopConnection}
+              className="p-2 rounded-full glass border border-destructive/40 text-destructive hover:bg-destructive hover:text-white transition-all cursor-pointer shadow-xl ml-1"
+              title="Disconnect Session"
+            >
+              <IconPhoneOff className="size-4" />
             </button>
           </div>
         )}

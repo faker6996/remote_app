@@ -329,7 +329,7 @@ async fn start_host(
             s.stream_quality.clone()
         };
         
-        let capture_task = tokio::spawn(async move {
+        let mut capture_task = tokio::spawn(async move {
             let capture = match rd_platform::create_screen_capture() {
                 Ok(c) => c,
                 Err(e) => {
@@ -422,7 +422,7 @@ async fn start_host(
         // 2. Audio capture & streaming task
         let transport_audio = transport.clone();
         let (_audio_service, audio_rx) = rd_platform::AudioCaptureService::start_capture();
-        let audio_task = tokio::spawn(async move {
+        let mut audio_task = tokio::spawn(async move {
             if let Some(mut rx) = audio_rx {
                 let mut a_seq = 0u64;
                 let mut buffer = Vec::with_capacity(9600);
@@ -451,7 +451,7 @@ async fn start_host(
         let transport_clip = transport.clone();
         let clip_mgr_host = Arc::new(rd_platform::ClipboardManager::new());
         let clip_mgr_clone = clip_mgr_host.clone();
-        let clipboard_task = tokio::spawn(async move {
+        let mut clipboard_task = tokio::spawn(async move {
             let mut interval = tokio::time::interval(tokio::time::Duration::from_millis(400));
             loop {
                 interval.tick().await;
@@ -465,7 +465,7 @@ async fn start_host(
         let transport_recv = transport.clone();
         let app_handle_for_recv = app_handle_clone.clone();
         let clip_mgr_for_recv = clip_mgr_host.clone();
-        let receiver_task = tokio::spawn(async move {
+        let mut receiver_task = tokio::spawn(async move {
             let injector = if allow_input {
                 rd_platform::create_input_injector().ok()
             } else {
@@ -484,6 +484,10 @@ async fn start_host(
                 };
                 
                 match &msg {
+                    ProtocolMessage::SessionEnd { reason, .. } => {
+                        info!("Remote viewer ended session: {}", reason);
+                        break;
+                    }
                     ProtocolMessage::InputEvent { event, .. } => {
                         if let Some(ref inj) = injector {
                             if let Err(e) = inj.lock().await.inject(event.clone()).await {
@@ -505,11 +509,16 @@ async fn start_host(
         
         // Wait until connection drops or stop_connection is called
         tokio::select! {
-            _ = capture_task => {},
-            _ = audio_task => {},
-            _ = clipboard_task => {},
-            _ = receiver_task => {},
+            _ = &mut capture_task => {},
+            _ = &mut audio_task => {},
+            _ = &mut clipboard_task => {},
+            _ = &mut receiver_task => {},
         }
+        
+        capture_task.abort();
+        audio_task.abort();
+        clipboard_task.abort();
+        receiver_task.abort();
         
         info!("Host session ended");
         let _ = app_handle_clone.emit("peer_disconnected", ());
@@ -645,7 +654,7 @@ async fn connect_peer(
     let transport_clip = transport.clone();
     let clip_mgr_viewer = Arc::new(rd_platform::ClipboardManager::new());
     let clip_mgr_clone = clip_mgr_viewer.clone();
-    let viewer_clip_task = tokio::spawn(async move {
+    let mut viewer_clip_task = tokio::spawn(async move {
         let mut interval = tokio::time::interval(tokio::time::Duration::from_millis(400));
         loop {
             interval.tick().await;
@@ -656,7 +665,7 @@ async fn connect_peer(
     });
     
     let clip_mgr_for_viewer = clip_mgr_viewer.clone();
-    let viewer_frame_task = tokio::spawn(async move {
+    let mut viewer_frame_task = tokio::spawn(async move {
         let mut pending_files = std::collections::HashMap::new();
         info!("Viewer frame receiver task started");
         
@@ -769,6 +778,10 @@ async fn connect_peer(
                         "data": data,
                     }));
                 }
+                ProtocolMessage::SessionEnd { reason, .. } => {
+                    info!("Remote host ended session: {}", reason);
+                    break;
+                }
                 other => {
                     handle_file_and_clipboard_msg(
                         &other,
@@ -786,9 +799,11 @@ async fn connect_peer(
     
     let handle = tokio::spawn(async move {
         tokio::select! {
-            _ = viewer_frame_task => {},
-            _ = viewer_clip_task => {},
+            _ = &mut viewer_frame_task => {},
+            _ = &mut viewer_clip_task => {},
         }
+        viewer_frame_task.abort();
+        viewer_clip_task.abort();
     });
     
     {
@@ -854,25 +869,51 @@ async fn send_file(
 
 /// Stop hosting or disconnect from remote peer
 #[tauri::command]
-async fn stop_connection(state: tauri::State<'_, Arc<Mutex<AppState>>>) -> Result<String, String> {
-    let mut app_state = state.lock().await;
+async fn stop_connection(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    app_handle: tauri::AppHandle,
+) -> Result<String, String> {
+    info!("stop_connection called");
     
-    if let Some(h) = app_state.host_task.take() {
+    // 1. Extract resources and release app_state lock IMMEDIATELY (no async inside lock!)
+    let (host_task, viewer_task, transport, latest_frame) = {
+        let mut app_state = state.lock().await;
+        let ht = app_state.host_task.take();
+        let vt = app_state.viewer_task.take();
+        let tr = app_state.webrtc_transport.take();
+        let lf = app_state.latest_frame.clone();
+        app_state.session = None;
+        app_state.mode = ConnectionMode::None;
+        app_state.remote_peer_id.clear();
+        app_state.pending_auth_tx = None;
+        (ht, vt, tr, lf)
+    };
+    
+    // 2. Clear latest frame
+    *latest_frame.lock().await = None;
+    
+    // 3. Abort background worker tasks
+    if let Some(h) = host_task {
         h.abort();
     }
-    if let Some(h) = app_state.viewer_task.take() {
+    if let Some(h) = viewer_task {
         h.abort();
     }
-    if let Some(transport) = app_state.webrtc_transport.take() {
-        let _ = transport.close().await;
+    
+    // 4. Send SessionEnd message and close transport asynchronously in background
+    // with a strict 800ms timeout so it NEVER blocks the caller!
+    if let Some(tr) = transport {
+        tokio::spawn(async move {
+            let _ = tr.send_msg(ProtocolMessage::SessionEnd {
+                session_id: SessionId::new(),
+                reason: "User requested disconnect".to_string(),
+            }).await;
+            let _ = tokio::time::timeout(tokio::time::Duration::from_millis(800), tr.close()).await;
+        });
     }
     
-    *app_state.latest_frame.lock().await = None;
-    app_state.session = None;
-    app_state.mode = ConnectionMode::None;
-    app_state.peer_id.clear();
-    app_state.remote_peer_id.clear();
-    app_state.pending_auth_tx = None;
+    // 5. Emit peer_disconnected event locally so UI updates instantly
+    let _ = app_handle.emit("peer_disconnected", ());
     
     Ok("Disconnected".to_string())
 }
