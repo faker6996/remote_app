@@ -124,8 +124,8 @@ function App() {
   const [passwordSaved, setPasswordSaved] = useState<boolean>(false);
   const [remotePassword, setRemotePassword] = useState<string>("");
 
-  // Audio state
-  const [isAudioMuted, setIsAudioMuted] = useState<boolean>(false);
+  // Audio state (default muted to prevent local feedback screeching)
+  const [isAudioMuted, setIsAudioMuted] = useState<boolean>(true);
   const audioCtxRef = useRef<AudioContext | null>(null);
 
   // Clipboard sync state
@@ -147,6 +147,16 @@ function App() {
   // Incoming connection request modal state (AnyDesk style authorization)
   const [incomingRequest, setIncomingRequest] = useState<{ remote_peer_id: string } | null>(null);
   const [allowRemoteInput, setAllowRemoteInput] = useState<boolean>(true);
+
+  // Control mode: "same_pc" (Click-Only & Drag to prevent cursor feedback loop) vs "remote_full" (Full remote)
+  const [controlMode, setControlMode] = useState<"same_pc" | "remote_full">("same_pc");
+  const isMouseDownRef = useRef<boolean>(false);
+
+  // System permissions state (macOS Screen Recording & Accessibility)
+  const [sysPermissions, setSysPermissions] = useState<{ screen_recording: boolean; accessibility: boolean }>({
+    screen_recording: true,
+    accessibility: true,
+  });
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -310,6 +320,27 @@ function App() {
     };
   }, []);
 
+  // Poll system permissions on macOS
+  useEffect(() => {
+    let isMounted = true;
+    const fetchPerms = async () => {
+      try {
+        const perms = await invoke<{ screen_recording: boolean; accessibility: boolean }>("check_permissions");
+        if (isMounted) {
+          setSysPermissions(perms);
+        }
+      } catch (e) {
+        console.warn("Failed to check permissions:", e);
+      }
+    };
+    fetchPerms();
+    const interval = setInterval(fetchPerms, 3000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, []);
+
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -331,20 +362,20 @@ function App() {
     e.target.value = "";
   };
 
-  // Frame rendering loop with fast native ImageData
+  // Frame rendering loop with hardware-accelerated JPEG base64 decoding
   const renderFrame = useCallback(async () => {
     if (!connState.connected || !canvasRef.current) {
       return;
     }
 
     try {
-      const frame = await invoke<{ width: number; height: number; data: number[] } | null>("get_frame");
+      const frame = await invoke<{ width: number; height: number; jpeg_base64: string } | null>("get_frame");
 
-      if (frame && canvasRef.current && frame.data && frame.data.length > 0) {
+      if (frame && canvasRef.current && frame.jpeg_base64) {
         const canvas = canvasRef.current;
         const ctx = canvas.getContext("2d", { alpha: false });
         if (ctx) {
-          const { width, height, data } = frame;
+          const { width, height, jpeg_base64 } = frame;
 
           // Resize canvas if frame dimensions changed
           if (canvas.width !== width || canvas.height !== height) {
@@ -352,10 +383,11 @@ function App() {
             canvas.height = height;
           }
 
-          // Blit decoded RGBA buffer directly via browser SIMD memcpy
-          const u8Array = new Uint8ClampedArray(data);
-          const imageData = new ImageData(u8Array, width, height);
-          ctx.putImageData(imageData, 0, 0);
+          const img = new Image();
+          img.onload = () => {
+            ctx.drawImage(img, 0, 0);
+          };
+          img.src = `data:image/jpeg;base64,${jpeg_base64}`;
 
           // Update FPS counter
           frameCountRef.current += 1;
@@ -507,21 +539,38 @@ function App() {
   // Calculate coordinates on the Host screen
   const getCanvasCoordinates = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
-    if (!canvas) return { x: 0, y: 0 };
+    if (!canvas) return { x: 20, y: 30 };
 
     const rect = canvas.getBoundingClientRect();
     const scaleX = canvas.width / rect.width;
     const scaleY = canvas.height / rect.height;
 
+    const rawX = Math.round((e.clientX - rect.left) * scaleX);
+    const rawY = Math.round((e.clientY - rect.top) * scaleY);
+
+    // Safeguard: Keep coordinates safely away from corners and top menu bar to avoid macOS Hot Corners at (0, 0)
     return {
-      x: Math.round((e.clientX - rect.left) * scaleX),
-      y: Math.round((e.clientY - rect.top) * scaleY),
+      x: Math.max(15, Math.min(canvas.width - 15, rawX)),
+      y: Math.max(25, Math.min(canvas.height - 15, rawY)),
     };
   };
 
-  // Mouse event handlers
+  // Mouse event handlers (throttled to 40 events/sec to prevent WebRTC congestion)
+  const lastMouseMoveTimeRef = useRef<number>(0);
   const handleMouseMove = async (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!connState.connected || mode !== "viewer") return;
+
+    // In "same_pc" test mode, do NOT forward hover moves to prevent cursor loops on 1 machine!
+    // Only forward mouse moves when user is dragging (mouse button held down)
+    if (controlMode === "same_pc" && !isMouseDownRef.current) {
+      return;
+    }
+
+    const now = performance.now();
+    if (now - lastMouseMoveTimeRef.current < 25) {
+      return;
+    }
+    lastMouseMoveTimeRef.current = now;
     const { x, y } = getCanvasCoordinates(e);
     try {
       await invoke("send_input", { eventType: "mouse_move", x, y });
@@ -532,6 +581,7 @@ function App() {
 
   const handleMouseDown = async (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!connState.connected || mode !== "viewer") return;
+    isMouseDownRef.current = true;
     canvasRef.current?.focus();
     const { x, y } = getCanvasCoordinates(e);
     const eventType = e.button === 2 ? "right_mouse_down" : "mouse_down";
@@ -544,6 +594,7 @@ function App() {
 
   const handleMouseUp = async (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!connState.connected || mode !== "viewer") return;
+    isMouseDownRef.current = false;
     const { x, y } = getCanvasCoordinates(e);
     const eventType = e.button === 2 ? "right_mouse_up" : "mouse_up";
     try {
@@ -764,6 +815,25 @@ function App() {
           {/* Mode-specific UI */}
           {mode === "host" ? (
             <div className="space-y-4">
+              {/* Accessibility Permission Alert for macOS */}
+              {!sysPermissions.accessibility && (
+                <div className="p-3.5 bg-amber-500/10 border border-amber-500/30 rounded-xl space-y-2 text-xs">
+                  <div className="flex items-center gap-2 font-semibold text-amber-400">
+                    <span className="text-base">⚠️</span>
+                    <span>Chưa cấp quyền Trợ năng (Accessibility)</span>
+                  </div>
+                  <p className="text-[11px] text-amber-200/80 leading-relaxed">
+                    macOS yêu cầu cấp quyền Trợ năng cho <strong>Antigravity</strong> để bên điều khiển có thể click chuột và gõ phím.
+                  </p>
+                  <button
+                    onClick={() => invoke("open_accessibility_settings")}
+                    className="w-full py-1.5 bg-amber-500 hover:bg-amber-400 text-black font-semibold rounded-lg text-xs transition-all cursor-pointer shadow-sm"
+                  >
+                    Bấm để mở Cài đặt Hệ Thống & Cấp quyền
+                  </button>
+                </div>
+              )}
+
               <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">This Desk (Your ID)</h3>
               <div className="p-6 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 border border-primary/20 text-center relative">
                 <div className="text-4xl font-bold font-mono tracking-widest text-primary mb-2">
@@ -928,6 +998,7 @@ function App() {
               onMouseMove={handleMouseMove}
               onMouseDown={handleMouseDown}
               onMouseUp={handleMouseUp}
+              onMouseLeave={() => { isMouseDownRef.current = false; }}
               onWheel={handleWheel}
               onKeyDown={handleKeyDown}
               onKeyUp={handleKeyUp}
@@ -953,6 +1024,23 @@ function App() {
               <span className="size-2 bg-success rounded-full animate-pulse"></span>
               {fps > 0 ? `${fps} FPS` : "STREAM ACTIVE"}
             </div>
+
+            {/* Control Mode Toggle (Test on same PC vs Full remote) */}
+            <button
+              onClick={() => setControlMode((prev) => (prev === "same_pc" ? "remote_full" : "same_pc"))}
+              className={`px-3 py-1.5 rounded-full glass border text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-xl ${
+                controlMode === "same_pc"
+                  ? "text-primary border-primary/50 bg-primary/10 font-semibold"
+                  : "text-muted-foreground border-border hover:text-foreground"
+              }`}
+              title={
+                controlMode === "same_pc"
+                  ? "Đang bật: Test cùng máy (Chỉ Click & Kéo - chống giật chuột sang Màn hình 0)"
+                  : "Đang bật: Toàn quyền (Khác máy - gửi cả di chuột hover)"
+              }
+            >
+              <span>{controlMode === "same_pc" ? "🖱️ Test cùng máy (Click-Only)" : "🌐 Khác máy (Full)"}</span>
+            </button>
 
             {/* Audio Stream Mute / Unmute */}
             <button

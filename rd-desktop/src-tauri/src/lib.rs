@@ -6,7 +6,7 @@ use tokio::sync::{oneshot, Mutex};
 use tracing::{debug, error, info};
 
 use rd_client::RemoteSession;
-use rd_codec::{Decoder, Encoder};
+use rd_codec::Encoder;
 use rd_core::domain::models::{AuthToken, CodecType, EncoderConfig, FrameFormat, InputEvent, KeyCode, MouseButton, SessionId};
 use rd_core::domain::ports::ProtocolMessage;
 use rd_transport::quic::QuicClient;
@@ -24,7 +24,7 @@ enum ConnectionMode {
 pub struct FrameResponse {
     pub width: u32,
     pub height: u32,
-    pub data: Vec<u8>,
+    pub jpeg_base64: String,
 }
 
 // State to hold the active remote session and WebRTC workers
@@ -340,6 +340,7 @@ async fn start_host(
             
             let mut encoder = rd_codec::JpegEncoder::with_quality(quality_ref.load(Ordering::Relaxed));
             let mut ticker = tokio::time::interval(tokio::time::Duration::from_millis(33)); // ~30 FPS
+            ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             let mut seq = 0u64;
             let mut current_q = quality_ref.load(Ordering::Relaxed);
             
@@ -424,19 +425,24 @@ async fn start_host(
         let audio_task = tokio::spawn(async move {
             if let Some(mut rx) = audio_rx {
                 let mut a_seq = 0u64;
+                let mut buffer = Vec::with_capacity(9600);
                 while let Some(pcm) = rx.recv().await {
-                    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as u64;
-                    let msg = ProtocolMessage::AudioFrame {
-                        sequence: a_seq,
-                        timestamp: now,
-                        sample_rate: 48000,
-                        channels: 2,
-                        data: pcm,
-                    };
-                    if let Err(_) = transport_audio.send_msg(msg).await {
-                        break;
+                    buffer.extend_from_slice(&pcm);
+                    if buffer.len() >= 4800 {
+                        let to_send = std::mem::take(&mut buffer);
+                        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as u64;
+                        let msg = ProtocolMessage::AudioFrame {
+                            sequence: a_seq,
+                            timestamp: now,
+                            sample_rate: 48000,
+                            channels: 2,
+                            data: to_send,
+                        };
+                        if let Err(_) = transport_audio.send_msg(msg).await {
+                            break;
+                        }
+                        a_seq += 1;
                     }
-                    a_seq += 1;
                 }
             }
         });
@@ -651,7 +657,6 @@ async fn connect_peer(
     
     let clip_mgr_for_viewer = clip_mgr_viewer.clone();
     let viewer_frame_task = tokio::spawn(async move {
-        let mut decoder = rd_codec::JpegDecoder::new();
         let mut pending_files = std::collections::HashMap::new();
         info!("Viewer frame receiver task started");
         
@@ -677,27 +682,17 @@ async fn connect_peer(
             };
             
             match msg {
-                ProtocolMessage::ScreenFrame { data, width, height, format, .. } => {
+                ProtocolMessage::ScreenFrame { data, width, height, .. } => {
                     // Reset any pending chunked frame on complete frame arrival
                     pending_frame = None;
-                    
-                    let raw_data = if format == FrameFormat::Jpeg {
-                        match decoder.decode(&data).await {
-                            Ok(decoded_frame) => decoded_frame.data,
-                            Err(e) => {
-                                error!("Viewer frame decode failed: {}", e);
-                                continue;
-                            }
-                        }
-                    } else {
-                        data
-                    };
+                    use base64::prelude::*;
+                    let jpeg_b64 = BASE64_STANDARD.encode(&data);
                     
                     let mut slot = latest_frame.lock().await;
                     *slot = Some(FrameResponse {
                         width,
                         height,
-                        data: raw_data,
+                        jpeg_base64: jpeg_b64,
                     });
                 }
                 ProtocolMessage::FrameChunk {
@@ -753,26 +748,16 @@ async fn connect_peer(
                             }
                             let w = pf.width;
                             let h = pf.height;
-                            let fmt = pf.format;
                             pending_frame = None; // Reset for next frame
                             
-                            let raw_data = if fmt == FrameFormat::Jpeg {
-                                match decoder.decode(&full_data).await {
-                                    Ok(decoded_frame) => decoded_frame.data,
-                                    Err(e) => {
-                                        error!("Viewer chunked frame decode failed: {}", e);
-                                        continue;
-                                    }
-                                }
-                            } else {
-                                full_data
-                            };
+                            use base64::prelude::*;
+                            let jpeg_b64 = BASE64_STANDARD.encode(&full_data);
                             
                             let mut slot = latest_frame.lock().await;
                             *slot = Some(FrameResponse {
                                 width: w,
                                 height: h,
-                                data: raw_data,
+                                jpeg_base64: jpeg_b64,
                             });
                         }
                     }
@@ -909,10 +894,12 @@ async fn get_frame(state: tauri::State<'_, Arc<Mutex<AppState>>>) -> Result<Opti
     if let Some(session) = &app_state.session {
         let mut session = session.lock().await;
         if let Some(frame) = session.receive_frame().await {
+            use base64::prelude::*;
+            let jpeg_b64 = BASE64_STANDARD.encode(&frame.data);
             return Ok(Some(FrameResponse {
                 width: frame.width,
                 height: frame.height,
-                data: frame.data,
+                jpeg_base64: jpeg_b64,
             }));
         }
     }
@@ -961,6 +948,15 @@ async fn send_input(
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_millis() as u64;
+
+        // When mouse button is clicked, first position cursor at exact (x, y) coordinates
+        if event_type == "mouse_down" || event_type == "right_mouse_down" {
+            let _ = transport.send_msg(ProtocolMessage::InputEvent {
+                timestamp: now,
+                event: InputEvent::MouseMove { x, y },
+            }).await;
+        }
+
         let msg = ProtocolMessage::InputEvent {
             timestamp: now,
             event: event.clone(),
@@ -1055,8 +1051,29 @@ async fn disconnect(state: tauri::State<'_, Arc<Mutex<AppState>>>) -> Result<Str
     }
 }
 
+#[derive(serde::Serialize)]
+pub struct SystemPermissions {
+    pub screen_recording: bool,
+    pub accessibility: bool,
+}
+
+#[tauri::command]
+fn check_permissions() -> SystemPermissions {
+    let (screen, a11y) = rd_platform::check_system_permissions();
+    SystemPermissions {
+        screen_recording: screen,
+        accessibility: a11y,
+    }
+}
+
+#[tauri::command]
+fn open_accessibility_settings() {
+    rd_platform::open_accessibility_settings();
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
     let app_state = Arc::new(Mutex::new(AppState::new()));
     
     tauri::Builder::default()
@@ -1072,6 +1089,8 @@ pub fn run() {
             set_unattended_password,
             send_key,
             send_file,
+            check_permissions,
+            open_accessibility_settings,
             // Legacy QUIC commands
             connect_agent,
             disconnect,

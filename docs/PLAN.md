@@ -51,6 +51,9 @@
 - [x] **1.1. Host Streaming Worker**:
   - [x] Khởi tạo luồng nền khi bấm `start_host` trong `rd-desktop`.
   - [x] Lấy frame từ `rd-platform::create_screen_capture()`.
+  - [x] Sửa lỗi ScreenCaptureKit: Bổ sung `stream.add_output(handler, SCStreamOutputType::Screen)` (trước đó chỉ đăng ký ErrorHandler dẫn tới không phát frame).
+  - [x] Tích hợp cơ chế Fallback sang `CoreGraphics` (`CGDisplayCreateImage`) khi SCStream mất kết nối hoặc quá thời gian chờ (150ms timeout).
+  - [x] Tự động kiểm tra quyền `CGPreflightScreenCaptureAccess()` và kích hoạt hộp thoại xin quyền `CGRequestScreenCaptureAccess()` trên macOS.
   - [x] Nén qua `rd-codec::JpegEncoder` (tối ưu xử lý BGRA/RGBA trực tiếp sang RGB).
   - [x] Gửi qua `WebRTCTransport::send_msg(ProtocolMessage::ScreenFrame)`.
 - [x] **1.2. Host Remote Input Executor**:

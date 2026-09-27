@@ -46,6 +46,7 @@ impl WebRTCTransport {
         local_peer_id: &str,
         remote_peer_id: &str,
     ) -> Result<Self, anyhow::Error> {
+        let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
         info!("Creating WebRTC transport as caller to peer {}", remote_peer_id);
         
         // Connect to signaling server
@@ -199,6 +200,7 @@ impl WebRTCTransport {
         signaling_url: &str,
         local_peer_id: &str,
     ) -> Result<Self, anyhow::Error> {
+        let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
         info!("Creating WebRTC transport as callee, peer ID: {}", local_peer_id);
         
         // Connect to signaling server
