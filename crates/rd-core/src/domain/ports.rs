@@ -109,11 +109,55 @@ pub enum ProtocolMessage {
         height: u32,
         format: FrameFormat,
     },
+    FrameChunk {
+        sequence: u64,
+        timestamp: u64,
+        chunk_index: u32,
+        total_chunks: u32,
+        data: Vec<u8>,
+        width: u32,
+        height: u32,
+        format: FrameFormat,
+    },
     
     // Input
     InputEvent {
         timestamp: u64,
         event: InputEvent,
+    },
+    
+    // Clipboard Synchronization
+    ClipboardSync {
+        text: String,
+    },
+    
+    // File Transfer
+    FileTransferRequest {
+        transfer_id: String,
+        file_name: String,
+        file_size: u64,
+    },
+    FileTransferResponse {
+        transfer_id: String,
+        accepted: bool,
+    },
+    FileChunk {
+        transfer_id: String,
+        chunk_index: u32,
+        total_chunks: u32,
+        data: Vec<u8>,
+    },
+    FileTransferComplete {
+        transfer_id: String,
+    },
+    
+    // Audio Streaming
+    AudioFrame {
+        sequence: u64,
+        timestamp: u64,
+        sample_rate: u32,
+        channels: u16,
+        data: Vec<u8>,
     },
     
     // Control

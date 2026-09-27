@@ -4,7 +4,7 @@ use rd_core::domain::{
     ports::InputInjector,
     error::InjectionError,
 };
-use tracing::{debug, warn};
+use tracing::debug;
 
 /// macOS input injection using CGEvent
 /// Note: CGEventSource is not Send, so we use spawn_blocking
@@ -29,9 +29,14 @@ impl InputInjector for MacOSInputInjector {
     }
 }
 
+use std::sync::atomic::{AtomicI32, Ordering};
+
+static LAST_MOUSE_X: AtomicI32 = AtomicI32::new(0);
+static LAST_MOUSE_Y: AtomicI32 = AtomicI32::new(0);
+
 /// Synchronous event injection using CGEvent (runs on blocking thread)
 fn inject_event_sync(event: InputEvent) -> Result<(), InjectionError> {
-    use core_graphics::event::{CGEvent, CGEventTapLocation, CGMouseButton, CGEventType};
+    use core_graphics::event::{CGEvent, CGEventTapLocation, CGMouseButton, CGEventType, ScrollEventUnit};
     use core_graphics::geometry::CGPoint;
     use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
     
@@ -40,6 +45,8 @@ fn inject_event_sync(event: InputEvent) -> Result<(), InjectionError> {
     
     match event {
         InputEvent::MouseMove { x, y } => {
+            LAST_MOUSE_X.store(x, Ordering::Relaxed);
+            LAST_MOUSE_Y.store(y, Ordering::Relaxed);
             debug!("Inject mouse move: ({}, {})", x, y);
             let point = CGPoint::new(x as f64, y as f64);
             let cg_event = CGEvent::new_mouse_event(
@@ -59,9 +66,10 @@ fn inject_event_sync(event: InputEvent) -> Result<(), InjectionError> {
                 _ => return Err(InjectionError::UnsupportedEvent),
             };
             
-            // For button events, we need to get current mouse location
-            // For now, use (0,0) - in production, query CGEvent::location
-            let point = CGPoint::new(0.0, 0.0);
+            // Use last tracked mouse position for accurate click injection
+            let x = LAST_MOUSE_X.load(Ordering::Relaxed);
+            let y = LAST_MOUSE_Y.load(Ordering::Relaxed);
+            let point = CGPoint::new(x as f64, y as f64);
             
             let event_type = if pressed {
                 match button {
@@ -77,7 +85,7 @@ fn inject_event_sync(event: InputEvent) -> Result<(), InjectionError> {
                 }
             };
             
-            debug!("Inject mouse button: {:?} pressed={}", button, pressed);
+            debug!("Inject mouse button at ({}, {}): {:?} pressed={}", x, y, button, pressed);
             let cg_event = CGEvent::new_mouse_event(
                 event_source,
                 event_type,
@@ -89,7 +97,15 @@ fn inject_event_sync(event: InputEvent) -> Result<(), InjectionError> {
         }
         InputEvent::MouseScroll { delta_x, delta_y } => {
             debug!("Inject mouse scroll: ({}, {})", delta_x, delta_y);
-            warn!("Mouse scroll not yet implemented");
+            let cg_event = CGEvent::new_scroll_event(
+                event_source,
+                ScrollEventUnit::LINE,
+                2,
+                delta_y,
+                delta_x,
+                0,
+            ).map_err(|_| InjectionError::InjectionFailed("Failed to create scroll event".into()))?;
+            cg_event.post(CGEventTapLocation::HID);
             Ok(())
         }
         InputEvent::KeyPress { key, pressed } => {

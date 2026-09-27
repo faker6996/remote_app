@@ -69,6 +69,10 @@ clap = { version = "4.5", features = ["derive"] }
 # TLS certificate generation
 rcgen = "0.13"
 
+# Clipboard & Audio
+arboard = "3.4"
+cpal = "0.15"
+
 # Platform-specific dependencies
 [workspace.dependencies.windows]
 version = "0.58"
@@ -78,6 +82,7 @@ features = [
     "Win32_Graphics_Direct3D11",
     "Win32_Graphics_Dxgi",
     "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_WindowsAndMessaging",
     "Win32_System_Threading",
 ]
 

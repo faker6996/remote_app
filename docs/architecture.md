@@ -1,26 +1,30 @@
 # Remote Desktop Application - Architecture Documentation
 
-**Version:** 1.0  
-**Date:** December 30, 2025  
-**Status:** Design Phase
+**Version:** 0.2.0  
+**Date:** September 2026  
+**Status:** Beta Implementation (Feature Complete)
 
 ---
 
 ## 1. EXECUTIVE SUMMARY
 
-Đây là một ứng dụng remote desktop đa nền tảng, cho phép:
+Đây là một ứng dụng remote desktop đa nền tảng chất lượng cao (tương tự AnyDesk / RustDesk), cho phép:
 
-- Xem màn hình máy tính từ xa theo thời gian thực (low latency)
-- Điều khiển chuột và bàn phím từ xa
-- Hỗ trợ Windows, Linux (Ubuntu), macOS
+- Xem màn hình máy tính từ xa theo thời gian thực độ trễ thấp (< 100-200ms)
+- Điều khiển chuột và bàn phím từ xa qua kết nối P2P WebRTC DataChannel
+- Đồng bộ khay nhớ tạm (Clipboard Sharing) hai chiều tự động
+- Truyền file (File Transfer) hai chiều tốc độ cao có hiển thị tiến trình
+- Truyền âm thanh (Audio Streaming) độ trễ thấp từ Host đến Viewer
+- Hỗ trợ đầy đủ macOS, Windows và Linux
 
 **Tech Stack:**
 
-- **Core:** Rust (1.80+) với Clean Architecture/Hexagonal pattern
-- **Transport:** QUIC (quinn) với TLS encryption
-- **Desktop UI:** Tauri v2 (Rust backend + React frontend)
-- **Async Runtime:** Tokio
-- **Platforms:** Windows (DXGI capture), Linux (X11/Wayland)
+- **Core:** Rust (1.92+) với Clean Architecture / Hexagonal pattern (9 crates)
+- **Transport:** WebRTC DataChannel (`webrtc-rs`) với STUN/SCTP Chunking + WebSocket Signaling (`rd-signaling` qua Axum) + QUIC (`quinn`)
+- **Desktop UI:** Tauri v2 (Rust backend + React 18 frontend + TypeScript + TailwindCSS)
+- **Audio & Clipboard:** `cpal` (16-bit PCM 48kHz Stereo) & `arboard`
+- **Async Runtime:** Tokio & dedicated OS capture threads
+- **Platforms:** macOS (CoreGraphics / ScreenCaptureKit + CGEvent), Windows (Win32 GDI + SendInput), Linux (X11 x11rb + XTest)
 
 ---
 

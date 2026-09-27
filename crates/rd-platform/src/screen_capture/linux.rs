@@ -4,25 +4,31 @@ use rd_core::domain::{
     ports::ScreenCapture,
     error::CaptureError,
 };
-use tracing::{debug, warn};
+use tracing::debug;
+use x11rb::connection::Connection;
+use x11rb::protocol::xproto::{self, ConnectionExt as _};
+use x11rb::rust_connection::RustConnection;
 
 /// Linux screen capture using X11
 pub struct LinuxScreenCapture {
+    conn: RustConnection,
+    screen_num: usize,
     display_id: u32,
-    // TODO: Add X11 connection resources
+    sequence: u64,
 }
 
 impl LinuxScreenCapture {
     pub fn new() -> Result<Self, CaptureError> {
-        // TODO: Initialize X11 connection
-        // 1. Connect to X server
-        // 2. Get root window
-        // 3. Query screen info
-        
         debug!("Initializing Linux screen capture (X11)");
         
+        let (conn, screen_num) = x11rb::connect(None)
+            .map_err(|e| CaptureError::InitializationFailed(format!("Failed to connect to X11: {}", e)))?;
+            
         Ok(Self {
+            conn,
+            screen_num,
             display_id: 0,
+            sequence: 0,
         })
     }
 }
@@ -30,45 +36,80 @@ impl LinuxScreenCapture {
 #[async_trait]
 impl ScreenCapture for LinuxScreenCapture {
     async fn capture(&mut self) -> Result<ScreenFrame, CaptureError> {
-        // TODO: Implement X11 screen capture
-        // 1. Use XGetImage to capture root window
-        // 2. Convert to RGBA format
+        let screen = self.conn.setup().roots.get(self.screen_num)
+            .ok_or_else(|| CaptureError::CaptureFailed("Screen index not found".to_string()))?;
+            
+        let root = screen.root;
+        let width = screen.width_in_pixels;
+        let height = screen.height_in_pixels;
         
-        // PLACEHOLDER: Return a dummy frame
-        warn!("Linux screen capture not yet implemented - returning dummy frame");
+        let reply = self.conn.get_image(
+            xproto::ImageFormat::Z_PIXMAP,
+            root,
+            0,
+            0,
+            width,
+            height,
+            !0,
+        ).map_err(|e| CaptureError::CaptureFailed(format!("get_image request error: {}", e)))?
+        .reply()
+        .map_err(|e| CaptureError::CaptureFailed(format!("get_image reply error: {}", e)))?;
         
+        self.sequence += 1;
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+            
         Ok(ScreenFrame {
-            sequence: 0,
-            timestamp: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_millis() as u64,
-            data: vec![0; 1920 * 1080 * 4],
-            width: 1920,
-            height: 1080,
-            format: FrameFormat::Raw,
+            sequence: self.sequence,
+            timestamp,
+            data: reply.data,
+            width: width as u32,
+            height: height as u32,
+            format: FrameFormat::Bgra,
         })
     }
     
     async fn get_displays(&self) -> Result<Vec<DisplayInfo>, CaptureError> {
-        // TODO: Query X11 displays
+        let roots = &self.conn.setup().roots;
+        let mut displays = Vec::new();
         
-        Ok(vec![DisplayInfo {
-            id: 0,
-            name: "X11 Display".to_string(),
-            width: 1920,
-            height: 1080,
-            x: 0,
-            y: 0,
-            is_primary: true,
-        }])
+        for (i, root) in roots.iter().enumerate() {
+            displays.push(DisplayInfo {
+                id: i as u32,
+                name: format!("X11 Display {}", i),
+                width: root.width_in_pixels as u32,
+                height: root.height_in_pixels as u32,
+                x: 0,
+                y: 0,
+                is_primary: i == self.screen_num,
+            });
+        }
+        
+        if displays.is_empty() {
+            displays.push(DisplayInfo {
+                id: 0,
+                name: "Primary Display".to_string(),
+                width: 1920,
+                height: 1080,
+                x: 0,
+                y: 0,
+                is_primary: true,
+            });
+        }
+        
+        Ok(displays)
     }
     
     async fn set_target_display(&mut self, display_id: u32) -> Result<(), CaptureError> {
-        self.display_id = display_id;
-        debug!("Set target display to {}", display_id);
-        Ok(())
+        if (display_id as usize) < self.conn.setup().roots.len() {
+            self.screen_num = display_id as usize;
+            self.display_id = display_id;
+            debug!("Set target display to {}", display_id);
+            Ok(())
+        } else {
+            Err(CaptureError::DisplayNotFound(display_id))
+        }
     }
 }
-
-// TODO: Implement proper X11 capture using x11rb or xcb

@@ -93,7 +93,7 @@ impl StreamOutput for StreamHandler {
                     data,
                     width,
                     height,
-                    format: FrameFormat::Raw, // BGRA format from macOS
+                    format: FrameFormat::Bgra,
                 };
                 
                 let _ = self.tx.send(Some(frame));
@@ -140,12 +140,24 @@ impl MacOSScreenCapture {
             .unwrap_or(&displays[0])
             .clone();
         
-        let width = display.width as u32;
-        let height = display.height as u32;
+        let raw_width = display.width as u32;
+        let raw_height = display.height as u32;
+        
+        // Cap maximum capture resolution to 1920 width (preserves aspect ratio)
+        // This ensures WebRTC frames fit reliably in MTU and maintains high FPS
+        let max_dim = 1920.0f32;
+        let scale = if raw_width as f32 > max_dim {
+            max_dim / raw_width as f32
+        } else {
+            1.0f32
+        };
+        let width = ((raw_width as f32 * scale).round() as u32) & !1;
+        let height = ((raw_height as f32 * scale).round() as u32) & !1;
         
         let display_id = display.display_id;
         
-        info!("macOS: Capturing display {} ({}x{})", display_id, width, height);
+        info!("macOS: Capturing display {} (native: {}x{}, scaled: {}x{})", 
+            display_id, raw_width, raw_height, width, height);
         
         let filter = SCContentFilter::new(InitParams::Display(display));
         let config = SCStreamConfiguration::from_size(width, height, false);

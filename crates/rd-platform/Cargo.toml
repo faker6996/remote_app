@@ -21,14 +21,21 @@ tracing = { workspace = true }
 # Image processing
 image = { workspace = true }
 
+# Clipboard
+arboard = { workspace = true }
+
+# Audio
+[target.'cfg(any(target_os = "macos", target_os = "windows"))'.dependencies]
+cpal = { workspace = true }
+
 # Platform-specific dependencies
 [target.'cfg(target_os = "windows")'.dependencies]
 windows = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-x11rb = { version = "0.13", features = ["allow-unsafe-code"] }
+x11rb = { version = "0.13", features = ["allow-unsafe-code", "xtest", "shm", "randr"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-core-graphics = "0.23"
+core-graphics = { version = "0.23", features = ["highsierra"] }
 core-foundation = "0.9"
 screencapturekit = "0.2"

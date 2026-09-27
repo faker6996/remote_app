@@ -9,12 +9,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Planned
 
-- Platform-specific screen capture implementations
-- Platform-specific input injection implementations
-- H.264 codec integration
-- NAT traversal (STUN/TURN)
-- Production authentication system
-- Multi-monitor support
+- Hardware-accelerated H.264 / AV1 video encoding (VideoToolbox / NVENC)
+- TURN relay fallback for strict symmetric NATs
+- Multi-monitor selection and viewport switcher
+- Native mobile client (iOS / Android)
+
+## [0.2.0] - 2026-09-27
+
+### Added
+
+- **WebRTC DataChannel P2P Streaming**:
+  - Direct low-latency P2P data transport with `webrtc-rs` and STUN candidate negotiation.
+  - Axum-based WebSocket signaling server (`rd-signaling`) on port 3030 with room-based SDP offer/answer routing.
+  - Automatic SCTP packet chunking (`ProtocolMessage::FrameChunk`) at 50KB to respect MTU and avoid buffer drops.
+  - Streaming frame reassembly (`PendingChunkedFrame`) on viewer side with obsolete sequence dropping.
+
+- **Cross-Platform Screen Capture & Input Injection**:
+  - **macOS**: ScreenCaptureKit and CoreGraphics capture loop; `CGEvent` mouse movement, clicks, scrolling, and keyboard events.
+  - **Windows**: Win32 GDI Desktop Capture with top-down BGRA DIB; Win32 `SendInput` API with normalized coordinates ($0..65535$).
+  - **Linux**: X11 `x11rb` `ZPixmap` capture; XTest extension (`xtest_fake_input`) for pointer, buttons, and keys.
+
+- **AnyDesk-Grade UX & Security**:
+  - 9-digit Peer ID generation with one-click copy.
+  - Unattended Access with SHA-256 hashed password verification.
+  - Incoming Connection Prompt with explicit Accept / Decline and granular input permission toggle (`allow_input`).
+  - Floating Session Toolbar with live FPS monitoring, dynamic stream quality selector (Speed, Balanced, Best), and fullscreen toggle.
+  - Full keyboard event forwarding with W3C code to OS virtual keycode mapping.
+
+- **Advanced Features**:
+  - **Bidirectional File Transfer**: Streaming file transfer with 32KB chunks, progress bar, and auto-saving to the system `Downloads` directory.
+  - **Bidirectional Clipboard Sharing**: Background clipboard monitor using `arboard` (400ms polling) with anti-reflection loop protection and visual sync badges.
+  - **Low-Latency Audio Streaming**: System audio capture via `cpal` (48kHz 16-bit PCM Stereo) on dedicated OS thread; browser playback via Web Audio API (`AudioContext`) with real-time Mute/Unmute toggle.
 
 ## [0.1.0] - 2025-12-30
 

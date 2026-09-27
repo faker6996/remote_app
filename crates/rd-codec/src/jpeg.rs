@@ -35,18 +35,37 @@ impl Encoder for JpegEncoder {
             frame.width, frame.height, self.config.quality
         );
         
-        // Convert raw frame data to image
-        let img_buffer = match frame.format {
-            FrameFormat::Raw => {
-                // Assume RGBA format
-                ImageBuffer::<Rgba<u8>, Vec<u8>>::from_raw(
-                    frame.width,
-                    frame.height,
-                    frame.data.clone(),
-                )
-                .ok_or_else(|| {
-                    CodecError::EncodingFailed("Invalid raw frame dimensions".to_string())
-                })?
+        let pixel_count = (frame.width * frame.height) as usize;
+        let expected_raw_len = pixel_count * 4;
+        
+        if frame.data.len() < expected_raw_len && frame.format != FrameFormat::Jpeg {
+            return Err(CodecError::EncodingFailed(format!(
+                "Frame buffer too small: expected {}, got {}",
+                expected_raw_len,
+                frame.data.len()
+            )));
+        }
+
+        let rgb_data: Vec<u8> = match frame.format {
+            FrameFormat::Bgra => {
+                // macOS ScreenCaptureKit: BGRA -> RGB
+                let mut rgb = Vec::with_capacity(pixel_count * 3);
+                for chunk in frame.data[..expected_raw_len].chunks_exact(4) {
+                    rgb.push(chunk[2]); // R
+                    rgb.push(chunk[1]); // G
+                    rgb.push(chunk[0]); // B
+                }
+                rgb
+            }
+            FrameFormat::Rgba | FrameFormat::Raw => {
+                // RGBA -> RGB
+                let mut rgb = Vec::with_capacity(pixel_count * 3);
+                for chunk in frame.data[..expected_raw_len].chunks_exact(4) {
+                    rgb.push(chunk[0]); // R
+                    rgb.push(chunk[1]); // G
+                    rgb.push(chunk[2]); // B
+                }
+                rgb
             }
             _ => {
                 return Err(CodecError::EncodingFailed(
@@ -55,18 +74,15 @@ impl Encoder for JpegEncoder {
             }
         };
         
-        // Convert RGBA to RGB (JPEG doesn't support alpha)
-        let rgb_img = image::DynamicImage::ImageRgba8(img_buffer).to_rgb8();
-        
         // Encode to JPEG
         let mut buffer = Cursor::new(Vec::new());
         let encoder = ImageJpegEncoder::new_with_quality(&mut buffer, self.config.quality);
         
         encoder
             .write_image(
-                rgb_img.as_raw(),
-                rgb_img.width(),
-                rgb_img.height(),
+                &rgb_data,
+                frame.width,
+                frame.height,
                 image::ExtendedColorType::Rgb8,
             )
             .map_err(|e| CodecError::EncodingFailed(e.to_string()))?;
@@ -128,7 +144,7 @@ impl Decoder for JpegDecoder {
             data: rgba_img.into_raw(),
             width,
             height,
-            format: FrameFormat::Raw,
+            format: FrameFormat::Rgba,
         };
         
         debug!("Decoded frame {}x{}", width, height);

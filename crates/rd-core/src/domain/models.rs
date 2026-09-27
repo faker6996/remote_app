@@ -133,7 +133,9 @@ pub struct ScreenFrame {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum FrameFormat {
-    Raw,          // RGBA/BGRA raw pixels
+    Raw,          // Legacy raw pixels
+    Rgba,         // RGBA 32-bit
+    Bgra,         // BGRA 32-bit (macOS ScreenCaptureKit default)
     Jpeg,         // JPEG compressed
     H264,         // H.264 encoded
     VP8,          // VP8 encoded

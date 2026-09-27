@@ -135,17 +135,85 @@ ScreenFrame {
 }
 ```
 
-**Frame Formats:**
+#### FrameChunk (SCTP Packet Chunking)
 
-- `Raw`: RGBA raw pixels (4 bytes per pixel)
-- `Jpeg`: JPEG compressed image
-- `H264`: H.264 encoded video frame
-- `VP8`: VP8 encoded video frame
-- `AV1`: AV1 encoded video frame
+When frame payload exceeds the WebRTC SCTP MTU limit (~50KB), the frame is split into multiple ordered chunks.
+
+```rust
+FrameChunk {
+    sequence: u64,         // Frame sequence number
+    timestamp: u64,        // Unix timestamp (milliseconds)
+    chunk_index: u32,      // 0-based chunk index
+    total_chunks: u32,     // Total chunk count for this frame
+    data: Vec<u8>,         // Fragment payload
+    width: u32,            // Frame width
+    height: u32,           // Frame height
+    format: FrameFormat,   // Frame format
+}
+```
 
 ---
 
-### 4. Input Control
+### 4. Advanced Features
+
+#### ClipboardSync
+
+Bidirectional clipboard text synchronization.
+
+```rust
+ClipboardSync {
+    text: String,          // Clipboard text content
+}
+```
+
+#### File Transfer Protocol
+
+Chunked file streaming across peers:
+
+```rust
+// 1. Negotiation
+FileTransferRequest {
+    transfer_id: String,   // Unique transfer UUID
+    file_name: String,     // Target filename
+    file_size: u64,        // Total file size in bytes
+}
+
+FileTransferResponse {
+    transfer_id: String,
+    accepted: bool,        // Accept or decline
+}
+
+// 2. Data Streaming (32KB chunks)
+FileChunk {
+    transfer_id: String,
+    chunk_index: u32,
+    total_chunks: u32,
+    data: Vec<u8>,
+}
+
+// 3. Completion
+FileTransferComplete {
+    transfer_id: String,
+}
+```
+
+#### AudioFrame
+
+Low-latency audio streaming from host to viewer:
+
+```rust
+AudioFrame {
+    sequence: u64,         // Audio packet sequence
+    timestamp: u64,        // Capture timestamp
+    sample_rate: u32,      // e.g., 48000 Hz
+    channels: u16,         // e.g., 2 (Stereo)
+    data: Vec<u8>,         // 16-bit PCM little-endian samples
+}
+```
+
+---
+
+### 5. Input Control
 
 #### InputEvent
 
@@ -376,13 +444,18 @@ If client can't keep up:
 
 ## Future Extensions
 
+### Implemented Features (v0.2.0)
+
+1. **Audio Streaming**: `AudioFrame` message with 16-bit PCM (48kHz Stereo)
+2. **File Transfer**: `FileTransferRequest`, `FileTransferResponse`, `FileChunk` (32KB), `FileTransferComplete`
+3. **Clipboard Sync**: `ClipboardSync` bidirectional synchronization with anti-echo protection
+4. **SCTP Chunking**: `FrameChunk` packet splitting for MTU protection
+
 ### Planned Features
 
-1. **Audio Streaming**: Add AudioFrame message
-2. **File Transfer**: Add FileTransfer message type
-3. **Clipboard Sync**: Add ClipboardSync message
-4. **Multi-monitor**: Add display_id to ScreenFrame
-5. **Region Updates**: Send only changed screen regions
+1. **Hardware H.264 / AV1 Codec**: Video packetization over WebRTC MediaStream
+2. **Multi-monitor**: Add `display_id` to ScreenFrame / dynamic screen switcher
+3. **Region / Dirty Rect Updates**: Send only changed screen tile bounding boxes
 
 ### Protocol Versioning
 

@@ -26,10 +26,11 @@ use webrtc::{
 use super::signaling::SignalingClient;
 
 /// WebRTC-based P2P transport
+#[derive(Clone)]
 pub struct WebRTCTransport {
     peer_connection: Arc<RTCPeerConnection>,
     data_channel: Arc<RTCDataChannel>,
-    rx: mpsc::Receiver<Vec<u8>>,
+    rx: Arc<Mutex<mpsc::Receiver<Vec<u8>>>>,
     signaling: Arc<Mutex<SignalingClient>>,
     remote_peer_id: String,
 }
@@ -141,7 +142,7 @@ impl WebRTCTransport {
         Ok(Self {
             peer_connection,
             data_channel,
-            rx,
+            rx: Arc::new(Mutex::new(rx)),
             signaling,
             remote_peer_id: remote_peer_id.to_string(),
         })
@@ -265,16 +266,14 @@ impl WebRTCTransport {
         Ok(Self {
             peer_connection,
             data_channel,
-            rx,
+            rx: Arc::new(Mutex::new(rx)),
             signaling,
             remote_peer_id,
         })
     }
-}
 
-#[async_trait]
-impl Transport for WebRTCTransport {
-    async fn send(&mut self, message: ProtocolMessage) -> Result<(), TransportError> {
+    /// Send a protocol message over the WebRTC data channel (non-blocking to receiver)
+    pub async fn send_msg(&self, message: ProtocolMessage) -> Result<(), TransportError> {
         let data = bincode::serialize(&message)
             .map_err(|e| TransportError::SerializationError(format!("Serialize error: {}", e)))?;
         
@@ -284,8 +283,10 @@ impl Transport for WebRTCTransport {
         Ok(())
     }
     
-    async fn receive(&mut self) -> Result<ProtocolMessage, TransportError> {
-        let data = self.rx.recv().await
+    /// Receive a protocol message from the WebRTC data channel
+    pub async fn recv_msg(&self) -> Result<ProtocolMessage, TransportError> {
+        let mut rx = self.rx.lock().await;
+        let data = rx.recv().await
             .ok_or(TransportError::Closed)?;
         
         let message: ProtocolMessage = bincode::deserialize(&data)
@@ -293,14 +294,39 @@ impl Transport for WebRTCTransport {
         
         Ok(message)
     }
-    
-    async fn close(&mut self) -> Result<(), TransportError> {
+
+    /// Check if peer connection is active
+    pub fn is_connected(&self) -> bool {
+        self.peer_connection.connection_state() == RTCPeerConnectionState::Connected
+    }
+
+    /// Close the peer connection
+    pub async fn close(&self) -> Result<(), TransportError> {
         self.peer_connection.close().await
             .map_err(|e| TransportError::ProtocolError(format!("Close error: {}", e)))?;
         Ok(())
     }
+
+    pub fn remote_peer_id(&self) -> &str {
+        &self.remote_peer_id
+    }
+}
+
+#[async_trait]
+impl Transport for WebRTCTransport {
+    async fn send(&mut self, message: ProtocolMessage) -> Result<(), TransportError> {
+        self.send_msg(message).await
+    }
+    
+    async fn receive(&mut self) -> Result<ProtocolMessage, TransportError> {
+        self.recv_msg().await
+    }
+    
+    async fn close(&mut self) -> Result<(), TransportError> {
+        WebRTCTransport::close(self).await
+    }
     
     fn is_connected(&self) -> bool {
-        self.peer_connection.connection_state() == RTCPeerConnectionState::Connected
+        WebRTCTransport::is_connected(self)
     }
 }

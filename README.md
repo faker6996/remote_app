@@ -1,332 +1,144 @@
-# Remote Desktop Platform
+# Remote Desktop Platform (AnyDesk Alternative)
 
-A cross-platform remote desktop application built with Rust and Tauri, featuring low-latency screen streaming and remote control capabilities.
+A high-performance, cross-platform remote desktop application built with Rust and Tauri v2, featuring low-latency P2P screen streaming, remote mouse/keyboard control, bidirectional clipboard synchronization, audio streaming, and chunked file transfer.
 
 [![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](LICENSE)
 [![Rust Version](https://img.shields.io/badge/rust-1.92%2B-orange.svg)](https://www.rust-lang.org/)
+[![Tauri v2](https://img.shields.io/badge/tauri-v2-blue.svg)](https://tauri.app/)
 
-## 🚧 Implementation Status
+---
 
-**Current Version**: v0.1.0 (Alpha)
+## 🚀 Implementation Status (v0.2.0 Beta)
 
-- ✅ **Core Architecture**: Clean Architecture with 9 Rust crates
-- ✅ **QUIC Transport**: Fully working with TLS 1.3 and ALPN protocol
-- ✅ **JPEG Codec**: Screen frame encoding/decoding implemented
-- ✅ **Server Binary**: QUIC server running on port 4433
-- ✅ **Agent Binary**: Connects to server, sends device info
-- ✅ **CLI Tool**: Debug and connection testing utility
-- ✅ **Desktop UI**: Tauri v2 + React application with connection panel
-- 🚧 **Screen Capture**: Platform-specific implementations (stubs only)
-- 🚧 **Input Injection**: Platform-specific implementations (stubs only)
-- ⏳ **H.264 Codec**: Planned for higher compression
-- ⏳ **NAT Traversal**: STUN/TURN support planned
+- ✅ **Clean Architecture Monorepo**: 9 modular Rust crates adhering to Hexagonal/Ports-and-Adapters principles.
+- ✅ **WebRTC P2P DataChannel Transport**: Low-latency peer-to-peer transport with SCTP MTU chunking (`FrameChunk`) and frame reassembly.
+- ✅ **Signaling Server (`rd-signaling`)**: High-concurrency Axum WebSocket signaling server on port 3030 with automated room-based SDP/ICE routing.
+- ✅ **Cross-Platform Screen Capture**:
+  - **macOS**: ScreenCaptureKit & CoreGraphics.
+  - **Windows**: Win32 GDI Desktop Capture with top-down BGRA DIB bitmap.
+  - **Linux**: X11 `x11rb` `ZPixmap` root window capture.
+- ✅ **Cross-Platform Remote Input Injection**:
+  - **macOS**: Native `CGEvent` mouse movement, clicks, scrolling, and keyboard events.
+  - **Windows**: Win32 `SendInput` API with normalized $0..65535$ coordinates.
+  - **Linux**: X11 XTest extension (`xtest_fake_input`).
+- ✅ **AnyDesk-Grade Security & Access Control**:
+  - **9-Digit Peer IDs**: Fast copy with visual confirmation.
+  - **Unattended Access**: Remote password protection with SHA-256 hash verification.
+  - **Incoming Connection Prompt**: Real-time modal with Accept/Decline and granular input permission toggle (`allow_input`).
+- ✅ **Advanced Features**:
+  - 📁 **Bidirectional File Transfer**: 32KB streaming chunks, live progress bar, auto-saving to system `Downloads`.
+  - 📋 **Bidirectional Clipboard Sharing**: Background polling with anti-reflection loop protection and visual sync badges.
+  - 🔊 **Low-Latency Audio Streaming**: System audio capture via `cpal` (16-bit PCM 48kHz Stereo) and browser playback via Web Audio API (`AudioContext`).
+- ✅ **Modern Tauri v2 Desktop App**: React 18, TypeScript, TailwindCSS, Tabler Icons, dynamic quality selector (Speed/Balanced/Best), and live FPS monitoring.
 
-## Features
+---
 
-- 🚀 **Low Latency**: Target < 200ms end-to-end delay (architecture ready)
-- 🔒 **Secure**: QUIC transport with TLS 1.3 encryption (implemented)
-- 🎯 **Cross-Platform**: Supports Windows, Linux, macOS (in progress)
-- 🖥️ **Modern UI**: Desktop client built with Tauri v2 + React (functional)
-- ⚡ **Performance**: Hardware-accelerated screen capture planned (DXGI on Windows)
-- 🧩 **Clean Architecture**: Modular design with hexagonal/ports-and-adapters pattern
+## 🏛️ Architecture Overview
 
-## Architecture
-
-The project is organized as a Rust workspace monorepo:
+The codebase is organized as a Rust workspace monorepo:
 
 ```
 remote_app/
-├── crates/           # Core Rust libraries and binaries
-│   ├── rd-core       # ✅ Domain models, ports/traits, error types
-│   ├── rd-codec      # ✅ JPEG encoder/decoder (H.264 planned)
-│   ├── rd-transport  # ✅ QUIC client/server with TLS 1.3
-│   ├── rd-platform   # 🚧 OS-specific implementations (stubs)
-│   ├── rd-server     # ✅ Signaling & relay server (running)
-│   ├── rd-agent      # ✅ Agent service (connects to server)
-│   ├── rd-client     # ✅ Client library for remote sessions
-│   └── rd-cli        # ✅ CLI tool for debugging/testing
-├── rd-desktop/       # ✅ Tauri v2 desktop application
-│   ├── src/          # React + TypeScript frontend
-│   └── src-tauri/    # Rust backend with Tauri commands
-└── docs/             # ✅ Architecture and API documentation
+├── crates/
+│   ├── rd-core/         # Domain models, ports/traits, and protocol message definitions
+│   ├── rd-codec/        # Zero-copy SIMD JPEG encoder/decoder with dynamic quality
+│   ├── rd-transport/    # WebRTC (webrtc-rs) DataChannel & QUIC (quinn) transports
+│   ├── rd-platform/     # OS-specific screen capture, input injection, audio, and clipboard
+│   ├── rd-signaling/    # Axum WebSocket signaling server (port 3030)
+│   ├── rd-server/       # QUIC relay server (port 4433)
+│   ├── rd-agent/        # Host background service
+│   ├── rd-client/       # Remote session client library
+│   └── rd-cli/          # Command-line diagnostics tool
+├── rd-desktop/          # Tauri v2 desktop application
+│   ├── src/             # React 18 + TypeScript + TailwindCSS frontend
+│   └── src-tauri/       # Tauri backend commands and background async tasks
+└── docs/                # Project documentation and specifications
+    ├── PLAN.md          # Project milestones and roadmap
+    ├── architecture.md  # Detailed architectural diagrams
+    ├── protocol.md      # Binary protocol specification
+    └── development.md   # Setup and contribution guide
 ```
 
-See [docs/architecture.md](docs/architecture.md) for detailed architecture documentation.
+---
 
-## Quick Start
+## ⚡ Quick Start
 
-### Prerequisites
+### 1. Prerequisites
 
 - **Rust 1.92+**: [Install Rust](https://rustup.rs/)
-- **Node.js 20+**: [Install Node.js](https://nodejs.org/) (for Tauri frontend)
-- **Platform-specific**:
-  - **Linux**: `libwebkit2gtk-4.1-dev`, `libgtk-3-dev`, `librsvg2-dev`, `libayatana-appindicator3-dev`
-  - **Windows**: Visual Studio 2019+ with C++ development tools
-  - **macOS**: Xcode Command Line Tools
+- **Node.js 20+**: [Install Node.js](https://nodejs.org/)
+- **Platform Dependencies**:
+  - **macOS**: Xcode Command Line Tools (`xcode-select --install`).
+  - **Windows**: Visual Studio 2019+ with C++ desktop development tools.
+  - **Linux**: `libwebkit2gtk-4.1-dev`, `libgtk-3-dev`, `libasound2-dev`, `libx11-dev`, `libxtst-dev`.
 
-### Build & Run
+### 2. Running Locally (Step-by-Step)
 
+#### Step 1: Start the Signaling Server
+Open a terminal and launch the signaling server:
 ```bash
-# Clone the repository
-git clone <repo-url>
-cd remote_app
+cargo run --bin rd-signaling
+```
+*The signaling server listens on `ws://127.0.0.1:3030/ws`.*
 
-# Install Rust (if needed)
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-source "$HOME/.cargo/env"
-
-# Build Rust workspace
-cargo build --workspace
-
-# Run the server (Terminal 1)
-RUST_LOG=info cargo run --bin rd-server
-
-# Run the agent (Terminal 2)
-RUST_LOG=info cargo run --bin rd-agent
-
-# Run the desktop client (Terminal 3)
+#### Step 2: Run the Tauri Desktop Client
+In another terminal, start the desktop application:
+```bash
 cd rd-desktop
 npm install
 npm run tauri dev
 ```
 
-## Components
-
-### 1. Server (`rd-server`) ✅
-
-Signaling and relay server for coordinating connections between clients and agents.
-
-**Status**: Fully functional, accepts QUIC connections on port 4433
-
-```bash
-# Run server
-RUST_LOG=info cargo run --bin rd-server
-
-# With CLI options
-cargo run --bin rd-server -- --version
-cargo run --bin rd-server -- --help
-
-# Default: 0.0.0.0:4433 (QUIC with TLS 1.3)
-```
-
-**Features**:
-
-- ✅ QUIC server with ALPN protocol "rdp/1"
-- ✅ TLS 1.3 encryption with rustls
-- ✅ Connection state management
-- 🚧 Message routing (partial)
-
-### 2. Agent (`rd-agent`) ✅
-
-Service that runs on the host machine, captures screen, and handles remote input.
-
-**Status**: Connects to server, sends device information
-
-```bash
-# Run agent
-RUST_LOG=info cargo run --bin rd-agent
-
-# Agent connects to server at 127.0.0.1:4433
-# Device ID: <hostname> (e.g., "bachtv")
-```
-
-**Features**:
-
-- ✅ QUIC client connection
-- ✅ Device registration (Hello message)
-- ✅ Platform detection (Windows/Linux/macOS)
-- 🚧 Screen capture loop (stub)
-- 🚧 Input injection (stub)
-
-### 3. Desktop Client (`rd-desktop`) ✅
-
-Tauri v2 desktop application with React frontend.
-
-**Status**: UI functional, connection logic implemented
-
-```bash
-cd rd-desktop
-npm run tauri dev    # Development mode
-npm run tauri build  # Production build
-```
-
-**Features**:
-
-- ✅ Connection panel (Server + Agent ID inputs)
-- ✅ Connect/Disconnect functionality
-- ✅ Status bar with connection state
-- ✅ Canvas viewer for remote screen
-- 🚧 Frame rendering (stub)
-- 🚧 Mouse/keyboard input events (stub)
-
-### 4. CLI Tool (`rd-cli`) ✅
-
-Command-line utility for testing and debugging.
-
-```bash
-# Debug QUIC transport
-cargo run --bin rd-cli -- debug -s 127.0.0.1:4433
-
-# List connected agents (planned)
-cargo run --bin rd-cli -- list
-
-# Connect to agent (planned)
-cargo run --bin rd-cli -- connect <agent-id>
-```
-
-## Protocol & Transport
-
-**Current Implementation**: ✅ QUIC with TLS 1.3
-
-- **Protocol**: QUIC (UDP-based)
-- **Encryption**: TLS 1.3 via rustls
-- **ALPN**: "rdp/1"
-- **Serialization**: bincode (binary)
-- **Port**: 4433 (default)
-
-**Protocol Messages** (13 types defined):
-
-- `Hello`, `HelloAck` - Device registration
-- `Auth`, `AuthResponse` - Authentication
-- `SessionRequest`, `SessionResponse` - Session management
-- `ScreenFrame` - Frame data with JPEG encoding
-- `InputEvent` - Mouse/keyboard events
-- `Ping`, `Pong` - Keep-alive
-- `Error`, `Disconnect` - Error handling
-- `FileTransfer` - File transfer (planned)
-
-See [docs/protocol.md](docs/protocol.md) for detailed protocol specification.
-
-## Development
-
-### Running Tests
-
-```bash
-# Run all tests
-cargo test --workspace
-
-# Run tests for a specific crate
-cargo test -p rd-core
-
-# Run with logging
-RUST_LOG=debug cargo test
-```
-
-### Code Style
-
-```bash
-# Format code
-cargo fmt --all
-
-# Run clippy
-cargo clippy --workspace -- -D warnings
-
-# Fix simple warnings
-cargo fix --workspace --allow-dirty
-```
-
-### Building Documentation
-
-```bash
-# Generate Rust API docs
-cargo doc --no-deps --open
-
-# Read architecture documentation
-cat docs/architecture.md
-cat docs/protocol.md
-cat docs/development.md
-```
-
-## Platform Support
-
-| Platform      | Screen Capture             | Input Injection     | Status     |
-| ------------- | -------------------------- | ------------------- | ---------- |
-| Windows 10/11 | DXGI (planned)             | SendInput (planned) | ⏳ Planned |
-| Ubuntu 22.04+ | X11 (planned)              | XTest (planned)     | ⏳ Planned |
-| macOS 12+     | ScreenCaptureKit (planned) | CGEvent (planned)   | ⏳ Planned |
-
-**Note**: Platform-specific implementations are currently stubs. Transport layer and UI are functional.
-| macOS 12+ | CoreGraphics | CGEvent | 📋 Planned |
-
-## Security
-
-- **Transport**: ✅ QUIC with TLS 1.3 (encrypted by default, fully implemented)
-- **Certificate**: ⚠️ Self-signed certificates for development (replace for production)
-- **Authentication**: 🚧 Basic device ID only (token-based auth planned)
-- **Permissions**: OS-level permissions required for screen capture and input injection
-
-⚠️ **Development Warning**: Current version uses self-signed certificates and basic authentication. Not suitable for production use.
-
-## Roadmap
-
-### ✅ Completed (v0.1.0)
-
-- [x] Core architecture with Clean Architecture pattern
-- [x] Domain models, ports, and error types
-- [x] QUIC transport layer with TLS 1.3
-- [x] JPEG codec implementation
-- [x] Server binary (QUIC server on port 4433)
-- [x] Agent binary (connects and registers)
-- [x] CLI debugging tool
-- [x] Tauri v2 desktop UI with React
-
-### 🚧 In Progress
-
-- [ ] Platform-specific screen capture (DXGI, X11, ScreenCaptureKit)
-- [ ] Platform-specific input injection
-- [ ] End-to-end frame streaming
-- [ ] Desktop UI frame rendering
-
-### ⏳ Planned (v0.2.0+)
-
-- [ ] H.264 hardware encoding
-- [ ] NAT traversal with STUN/TURN
-- [ ] User authentication system
-- [ ] Production TLS certificates
-- [ ] Multi-monitor support
-- [ ] File transfer
-- [ ] Audio streaming
-- [ ] Mobile client (Tauri mobile)
-- [ ] Clipboard synchronization
-
-## Contributing
-
-Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## License
-
-This project is dual-licensed under:
-
-- MIT License ([LICENSE-MIT](LICENSE-MIT))
-- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE))
-
-You may choose either license for your use.
-
-## Acknowledgments
-
-- Inspired by [RustDesk](https://github.com/rustdesk/rustdesk)
-- Built with [Tauri](https://tauri.app/), [Quinn](https://github.com/quinn-rs/quinn), and [Tokio](https://tokio.rs/)
-- Protocol design inspired by modern remote desktop protocols
-
-## Technology Stack
-
-- **Language**: Rust 1.92.0
-- **Transport**: QUIC (quinn 0.11)
-- **TLS**: rustls 0.23 with aws-lc-rs
-- **Serialization**: bincode + serde
-- **Async Runtime**: Tokio 1.x
-- **Desktop UI**: Tauri v2 + React 18 + TypeScript
-- **Codec**: JPEG (jpeg-encoder), H.264 planned
-- **Build System**: Cargo workspaces
+#### Step 3: Connect & Control
+1. The app displays your **9-Digit Peer ID** (e.g. `123 456 789`).
+2. Set an **Unattended Access Password** or leave it blank to require interactive confirmation.
+3. Open a second client instance (or connect from another device pointing to your signaling server IP).
+4. Enter the Host's Peer ID and click **Connect**.
+5. Control the screen, use mouse/keyboard, copy-paste across machines, send files, or listen to audio!
 
 ---
 
-**Status**: 🚧 Alpha Development (v0.1.0)
+## 🎛️ Key User Interface Features
 
-**Last Updated**: December 30, 2025
+- **Floating Toolbar**: Hoverable control bar during an active session with:
+  - 🔊 **Audio Toggle**: Mute or unmute host audio streaming in real time.
+  - 📁 **File Transfer**: Send files directly to the remote machine's `Downloads` directory with progress feedback.
+  - 📋 **Clipboard Synced Badge**: Visual confirmation whenever text is copied across sessions.
+  - 🎚️ **Stream Quality Switcher**: Toggle dynamically between **Speed** ($Q=50$), **Balanced** ($Q=70$), and **Best** ($Q=85$).
+  - 📈 **Real-Time FPS**: Live render framerate indicator.
+  - 🖥️ **Fullscreen Mode & Disconnect**: Quick session exit and viewport maximization.
+
+---
+
+## 🔒 Security & Privacy
+
+- **WebRTC DTLS / SRTP**: All peer-to-peer data and media streams are end-to-end encrypted using DTLS 1.2/1.3.
+- **Access Authorization**:
+  - Interactive Mode: Explicit **Accept / Decline** dialog on the host with optional mouse/keyboard permission toggling (`allow_input`).
+  - Unattended Mode: SHA-256 hashed password verification before establishing the session.
+- **OS Permissions**:
+  - macOS requires **Screen Recording** and **Accessibility** permissions granted in *System Settings -> Privacy & Security*.
+
+---
+
+## 🛠️ Testing & Verification
+
+```bash
+# Run all workspace unit tests
+cargo test --workspace
+
+# Check compilation across platforms
+cargo check -p rd-platform --target aarch64-pc-windows-msvc
+cargo check -p rd-platform --target aarch64-unknown-linux-gnu
+
+# Run Tauri frontend build
+cd rd-desktop && npm run build
+```
+
+---
+
+## 📄 License
+
+Dual-licensed under either:
+- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE))
+- MIT License ([LICENSE-MIT](LICENSE-MIT))

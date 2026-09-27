@@ -1,6 +1,6 @@
 pub mod jpeg;
 
-pub use jpeg::JpegEncoder;
+pub use jpeg::{JpegEncoder, JpegDecoder};
 
 // Re-export core traits
 pub use rd_core::domain::ports::{Encoder, Decoder};
