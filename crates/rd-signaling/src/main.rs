@@ -175,9 +175,19 @@ async fn handle_signal(
             let _ = socket.send(Message::Text(serde_json::to_string(&response).unwrap())).await;
         }
         
-        SignalMessage::Offer { peer_id: id, sdp } => {
-            info!("Offer from {}", id);
-            state.offers.insert(id, sdp);
+        SignalMessage::Offer { peer_id: target_id, sdp } => {
+            let sender = peer_id.clone().unwrap_or_default();
+            info!("Forwarding Offer from {} to {}", sender, target_id);
+            state.offers.insert(target_id.clone(), sdp.clone());
+            if let Some(target_peer) = state.peers.get(&target_id) {
+                let msg = SignalMessage::Offer {
+                    peer_id: sender,
+                    sdp,
+                };
+                let _ = target_peer.tx.send(msg);
+            } else {
+                warn!("Target peer {} not found for offer", target_id);
+            }
         }
         
         SignalMessage::Answer { peer_id: target_id, sdp } => {

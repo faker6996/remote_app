@@ -285,6 +285,31 @@ function App() {
     };
   }, [isAudioMuted]);
 
+  // Auto initialize host on startup to get Peer ID immediately
+  useEffect(() => {
+    let isMounted = true;
+    const autoInitHost = async () => {
+      try {
+        const peerId = await invoke<string>("start_host", {
+          signalingUrl: "ws://localhost:3030",
+        });
+        if (isMounted) {
+          setMyPeerId(peerId);
+          setConnState((prev) => ({
+            ...prev,
+            status: `Ready (ID: ${peerId})`,
+          }));
+        }
+      } catch (err) {
+        console.warn("Auto init host:", err);
+      }
+    };
+    autoInitHost();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -377,8 +402,7 @@ function App() {
       setMyPeerId(peerId);
       setConnState((prev) => ({
         ...prev,
-        connected: true,
-        status: `Sharing as ${peerId} (Waiting for viewer...)`,
+        status: `Ready (ID: ${peerId})`,
       }));
     } catch (error) {
       setConnState((prev) => ({
@@ -798,6 +822,28 @@ function App() {
             </div>
           ) : (
             <div className="space-y-4">
+              {/* Always display Your ID so user knows it instantly */}
+              <div className="p-4 rounded-xl bg-gradient-to-br from-primary/15 to-primary/5 border border-primary/20 flex items-center justify-between">
+                <div>
+                  <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block">
+                    This Desk (Your ID)
+                  </span>
+                  <span className="text-2xl font-bold font-mono text-primary tracking-widest">
+                    {myPeerId || "Connecting..."}
+                  </span>
+                </div>
+                {myPeerId && (
+                  <button
+                    onClick={handleCopyId}
+                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-background/80 hover:bg-background border border-border text-foreground transition-all cursor-pointer"
+                    title="Copy Your ID"
+                  >
+                    {copied ? <IconCheck className="size-3.5 text-success" /> : <IconCopy className="size-3.5" />}
+                    <span>{copied ? "Copied" : "Copy"}</span>
+                  </button>
+                )}
+              </div>
+
               <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Remote Desk</h3>
 
               <div className="space-y-1">
