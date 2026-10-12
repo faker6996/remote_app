@@ -103,7 +103,7 @@ async fn ws_handler(
 }
 
 async fn handle_socket(mut socket: WebSocket, state: AppState) {
-    let (tx, mut rx) = broadcast::channel::<SignalMessage>(16);
+    let (tx, mut rx) = broadcast::channel::<SignalMessage>(256);
     let mut peer_id: Option<String> = None;
     
     loop {

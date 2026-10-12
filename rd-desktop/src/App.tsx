@@ -390,15 +390,17 @@ function App() {
           };
           img.src = `data:image/jpeg;base64,${jpeg_base64}`;
 
-          // Update FPS counter
+          // Update FPS counter on real received frame
           frameCountRef.current += 1;
-          const now = performance.now();
-          if (now - lastFpsTimeRef.current >= 1000) {
-            setFps(Math.round((frameCountRef.current * 1000) / (now - lastFpsTimeRef.current)));
-            frameCountRef.current = 0;
-            lastFpsTimeRef.current = now;
-          }
         }
+      }
+
+      // Refresh FPS counter once per second
+      const now = performance.now();
+      if (now - lastFpsTimeRef.current >= 1000) {
+        setFps(Math.round((frameCountRef.current * 1000) / (now - lastFpsTimeRef.current)));
+        frameCountRef.current = 0;
+        lastFpsTimeRef.current = now;
       }
     } catch (error) {
       console.error("Frame render error:", error);

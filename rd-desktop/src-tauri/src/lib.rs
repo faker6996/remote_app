@@ -343,6 +343,9 @@ async fn start_host(
             ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             let mut seq = 0u64;
             let mut current_q = quality_ref.load(Ordering::Relaxed);
+            let mut last_frame_data: Vec<u8> = Vec::new();
+            let mut has_previous_frame = false;
+            let mut idle_ticks: u32 = 0;
             
             info!("Screen capture loop started (target: 30 FPS)");
             loop {
@@ -367,6 +370,21 @@ async fn start_host(
                         continue;
                     }
                 };
+
+                // Delta change detection: check if frame is identical to previous capture
+                let is_same = has_previous_frame && last_frame_data == frame.data;
+                if is_same {
+                    idle_ticks += 1;
+                    // When screen is static, throttle to 1 keepalive frame per second (every 30 ticks)
+                    if idle_ticks % 30 != 0 {
+                        continue;
+                    }
+                } else {
+                    idle_ticks = 0;
+                    last_frame_data.clear();
+                    last_frame_data.extend_from_slice(&frame.data);
+                    has_previous_frame = true;
+                }
                 
                 let jpeg_bytes = match encoder.encode(&frame).await {
                     Ok(bytes) => bytes,
@@ -925,7 +943,7 @@ async fn get_frame(state: tauri::State<'_, Arc<Mutex<AppState>>>) -> Result<Opti
     
     // 1. WebRTC P2P session
     {
-        let frame = app_state.latest_frame.lock().await.clone();
+        let frame = app_state.latest_frame.lock().await.take();
         if frame.is_some() {
             return Ok(frame);
         }

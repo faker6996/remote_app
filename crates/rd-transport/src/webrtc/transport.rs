@@ -39,6 +39,35 @@ pub struct WebRTCTransport {
     remote_peer_id: String,
 }
 
+/// Constructs default STUN servers and optional TURN fallback from environment
+fn build_ice_servers() -> Vec<RTCIceServer> {
+    let mut servers = vec![
+        RTCIceServer {
+            urls: vec![
+                "stun:stun.l.google.com:19302".to_string(),
+                "stun:stun1.l.google.com:19302".to_string(),
+            ],
+            ..Default::default()
+        }
+    ];
+
+    if let Ok(turn_url) = std::env::var("RD_TURN_SERVER") {
+        if !turn_url.trim().is_empty() {
+            let username = std::env::var("RD_TURN_USERNAME").unwrap_or_default();
+            let credential = std::env::var("RD_TURN_PASSWORD").unwrap_or_default();
+            info!("Configured TURN relay server: {}", turn_url);
+            servers.push(RTCIceServer {
+                urls: vec![turn_url],
+                username,
+                credential,
+                ..Default::default()
+            });
+        }
+    }
+
+    servers
+}
+
 impl WebRTCTransport {
     /// Create a new WebRTC transport as the initiator (caller)
     pub async fn new_as_caller(
@@ -53,17 +82,9 @@ impl WebRTCTransport {
         let signaling = SignalingClient::connect(signaling_url, local_peer_id).await?;
         let signaling = Arc::new(Mutex::new(signaling));
         
-        // Create WebRTC peer connection with STUN servers
+        // Create WebRTC peer connection with STUN and optional TURN servers
         let config = RTCConfiguration {
-            ice_servers: vec![
-                RTCIceServer {
-                    urls: vec![
-                        "stun:stun.l.google.com:19302".to_string(),
-                        "stun:stun1.l.google.com:19302".to_string(),
-                    ],
-                    ..Default::default()
-                }
-            ],
+            ice_servers: build_ice_servers(),
             ..Default::default()
         };
         
@@ -207,17 +228,9 @@ impl WebRTCTransport {
         let signaling = SignalingClient::connect(signaling_url, local_peer_id).await?;
         let signaling = Arc::new(Mutex::new(signaling));
         
-        // Create WebRTC peer connection with STUN servers
+        // Create WebRTC peer connection with STUN and optional TURN servers
         let config = RTCConfiguration {
-            ice_servers: vec![
-                RTCIceServer {
-                    urls: vec![
-                        "stun:stun.l.google.com:19302".to_string(),
-                        "stun:stun1.l.google.com:19302".to_string(),
-                    ],
-                    ..Default::default()
-                }
-            ],
+            ice_servers: build_ice_servers(),
             ..Default::default()
         };
         
