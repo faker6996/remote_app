@@ -132,6 +132,9 @@ pub enum ProtocolMessage {
     SelectDisplay {
         display_id: u32,
     },
+    SelectCodec {
+        codec: CodecType,
+    },
     DisplayListResponse {
         displays: Vec<DisplayInfo>,
     },

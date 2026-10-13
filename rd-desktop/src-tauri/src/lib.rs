@@ -39,6 +39,7 @@ struct AppState {
     viewer_task: Option<tokio::task::JoinHandle<()>>,
     pending_auth_tx: Option<oneshot::Sender<(bool, bool)>>, // (accepted, allow_input)
     stream_quality: Arc<AtomicU8>,
+    video_codec: Arc<Mutex<CodecType>>,
     unattended_password_hash: Arc<Mutex<Option<String>>>,
 }
 
@@ -55,6 +56,7 @@ impl AppState {
             viewer_task: None,
             pending_auth_tx: None,
             stream_quality: Arc::new(AtomicU8::new(70)),
+            video_codec: Arc::new(Mutex::new(CodecType::H264)),
             unattended_password_hash: Arc::new(Mutex::new(None)),
         }
     }
@@ -322,12 +324,17 @@ async fn start_host(
             "remote_peer_id": remote_peer
         }));
         
-        // 1. Screen capture & JPEG encode task
+        // 1. Screen capture & video encode task
         let transport_send = transport.clone();
         let quality_ref = {
             let s = state_clone.lock().await;
             s.stream_quality.clone()
         };
+        let codec_ref = {
+            let s = state_clone.lock().await;
+            s.video_codec.clone()
+        };
+        let codec_for_recv = codec_ref.clone();
         
         let capture = match rd_platform::create_screen_capture() {
             Ok(c) => c,
@@ -347,6 +354,7 @@ async fn start_host(
 
         let mut capture_task = tokio::spawn(async move {
             let mut encoder = rd_codec::JpegEncoder::with_quality(quality_ref.load(Ordering::Relaxed));
+            let mut h264_encoder = rd_codec::H264Encoder::with_bitrate(2500).ok();
             let mut ticker = tokio::time::interval(tokio::time::Duration::from_millis(33)); // ~30 FPS
             ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             let mut seq = 0u64;
@@ -358,6 +366,8 @@ async fn start_host(
             loop {
                 ticker.tick().await;
                 
+                let active_codec = *codec_ref.lock().await;
+
                 // Update encoder quality if user changed setting
                 let new_q = quality_ref.load(Ordering::Relaxed);
                 if new_q != current_q {
@@ -377,6 +387,61 @@ async fn start_host(
                         continue;
                     }
                 };
+
+                // H.264 video stream encoding path
+                if active_codec == CodecType::H264 {
+                    if let Some(ref mut h264_enc) = h264_encoder {
+                        match h264_enc.encode(&frame).await {
+                            Ok(h264_bytes) => {
+                                if !h264_bytes.is_empty() {
+                                    const MAX_CHUNK_SIZE: usize = 50_000;
+                                    if h264_bytes.len() <= MAX_CHUNK_SIZE {
+                                        let msg = ProtocolMessage::ScreenFrame {
+                                            sequence: seq,
+                                            timestamp: frame.timestamp,
+                                            data: h264_bytes,
+                                            width: frame.width,
+                                            height: frame.height,
+                                            format: FrameFormat::H264,
+                                        };
+                                        if let Err(e) = transport_send.send_msg(msg).await {
+                                            error!("Failed to send H264 frame: {}", e);
+                                            break;
+                                        }
+                                    } else {
+                                        let total_chunks = ((h264_bytes.len() + MAX_CHUNK_SIZE - 1) / MAX_CHUNK_SIZE) as u32;
+                                        let mut send_failed = false;
+                                        for (chunk_idx, chunk_data) in h264_bytes.chunks(MAX_CHUNK_SIZE).enumerate() {
+                                            let msg = ProtocolMessage::FrameChunk {
+                                                sequence: seq,
+                                                timestamp: frame.timestamp,
+                                                chunk_index: chunk_idx as u32,
+                                                total_chunks,
+                                                data: chunk_data.to_vec(),
+                                                width: frame.width,
+                                                height: frame.height,
+                                                format: FrameFormat::H264,
+                                            };
+                                            if let Err(e) = transport_send.send_msg(msg).await {
+                                                error!("Failed to send H264 chunk: {}", e);
+                                                send_failed = true;
+                                                break;
+                                            }
+                                        }
+                                        if send_failed {
+                                            break;
+                                        }
+                                    }
+                                    seq += 1;
+                                    continue;
+                                }
+                            }
+                            Err(e) => {
+                                error!("H.264 encode error: {}", e);
+                            }
+                        }
+                    }
+                }
 
                 // Tile-based dirty rectangle detection
                 let dirty_opt = tile_mgr.detect_dirty_tiles(&frame);
@@ -517,11 +582,12 @@ async fn start_host(
             }
         });
 
-        // 4. Remote message receiver task (input injection, clipboard, file transfer, multi-monitor)
+        // 4. Remote message receiver task (input injection, clipboard, file transfer, multi-monitor, codec switch)
         let transport_recv = transport.clone();
         let app_handle_for_recv = app_handle_clone.clone();
         let clip_mgr_for_recv = clip_mgr_host.clone();
         let capture_for_select_recv = capture_for_select.clone();
+        let codec_for_recv_task = codec_for_recv.clone();
         let mut receiver_task = tokio::spawn(async move {
             let injector = if allow_input {
                 rd_platform::create_input_injector().ok()
@@ -550,6 +616,11 @@ async fn start_host(
                         if let Err(e) = capture_for_select_recv.lock().await.set_target_display(*display_id).await {
                             error!("Failed to switch display to {}: {}", display_id, e);
                         }
+                    }
+                    ProtocolMessage::SelectCodec { codec } => {
+                        info!("Remote viewer requested switch to video codec: {:?}", codec);
+                        let mut c = codec_for_recv_task.lock().await;
+                        *c = *codec;
                     }
                     ProtocolMessage::InputEvent { event, .. } => {
                         if let Some(ref inj) = injector {
@@ -705,6 +776,14 @@ async fn connect_peer(
         }
     }
     
+    // Synchronize viewer's preferred video codec with host
+    let preferred_codec = {
+        let app_state = state.lock().await;
+        let c = app_state.video_codec.lock().await;
+        *c
+    };
+    let _ = transport.send_msg(ProtocolMessage::SelectCodec { codec: preferred_codec }).await;
+    
     // Spawn background receiver task to decode incoming frames and handle messages
     let transport_recv = transport.clone();
     let latest_frame = {
@@ -754,18 +833,30 @@ async fn connect_peer(
             };
             
             match msg {
-                ProtocolMessage::ScreenFrame { data, width, height, .. } => {
+                ProtocolMessage::ScreenFrame { data, width, height, format, sequence, timestamp } => {
                     // Reset any pending chunked frame on complete frame arrival
                     pending_frame = None;
-                    use base64::prelude::*;
-                    let jpeg_b64 = BASE64_STANDARD.encode(&data);
-                    
-                    let mut slot = latest_frame.lock().await;
-                    *slot = Some(FrameResponse {
-                        width,
-                        height,
-                        jpeg_base64: jpeg_b64,
-                    });
+                    if format == FrameFormat::H264 {
+                        use base64::prelude::*;
+                        let h264_b64 = BASE64_STANDARD.encode(&data);
+                        let _ = app_handle_clone.emit("h264_frame", serde_json::json!({
+                            "sequence": sequence,
+                            "timestamp": timestamp,
+                            "width": width,
+                            "height": height,
+                            "data_base64": h264_b64,
+                        }));
+                    } else {
+                        use base64::prelude::*;
+                        let jpeg_b64 = BASE64_STANDARD.encode(&data);
+                        
+                        let mut slot = latest_frame.lock().await;
+                        *slot = Some(FrameResponse {
+                            width,
+                            height,
+                            jpeg_base64: jpeg_b64,
+                        });
+                    }
                 }
                 ProtocolMessage::FrameChunk {
                     sequence,
@@ -820,17 +911,31 @@ async fn connect_peer(
                             }
                             let w = pf.width;
                             let h = pf.height;
+                            let is_h264 = pf.format == FrameFormat::H264;
+                            let seq = pf.sequence;
                             pending_frame = None; // Reset for next frame
                             
-                            use base64::prelude::*;
-                            let jpeg_b64 = BASE64_STANDARD.encode(&full_data);
-                            
-                            let mut slot = latest_frame.lock().await;
-                            *slot = Some(FrameResponse {
-                                width: w,
-                                height: h,
-                                jpeg_base64: jpeg_b64,
-                            });
+                            if is_h264 {
+                                use base64::prelude::*;
+                                let h264_b64 = BASE64_STANDARD.encode(&full_data);
+                                let _ = app_handle_clone.emit("h264_frame", serde_json::json!({
+                                    "sequence": seq,
+                                    "timestamp": 0,
+                                    "width": w,
+                                    "height": h,
+                                    "data_base64": h264_b64,
+                                }));
+                            } else {
+                                use base64::prelude::*;
+                                let jpeg_b64 = BASE64_STANDARD.encode(&full_data);
+                                
+                                let mut slot = latest_frame.lock().await;
+                                *slot = Some(FrameResponse {
+                                    width: w,
+                                    height: h,
+                                    jpeg_base64: jpeg_b64,
+                                });
+                            }
                         }
                     }
                 }
@@ -1138,6 +1243,32 @@ async fn select_display(
     Ok(())
 }
 
+/// Adjust video codec dynamically ("jpeg" or "h264")
+#[tauri::command]
+async fn set_video_codec(
+    codec: String,
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+) -> Result<String, String> {
+    let app_state = state.lock().await;
+    let selected_codec = match codec.to_lowercase().as_str() {
+        "h264" => CodecType::H264,
+        _ => CodecType::Jpeg,
+    };
+    
+    {
+        let mut codec_lock = app_state.video_codec.lock().await;
+        *codec_lock = selected_codec;
+    }
+
+    if let Some(transport) = &app_state.webrtc_transport {
+        let msg = ProtocolMessage::SelectCodec { codec: selected_codec };
+        let _ = transport.send_msg(msg).await;
+        info!("Sent SelectCodec {:?} to peer", selected_codec);
+    }
+    
+    Ok(codec)
+}
+
 // Legacy QUIC connection (kept for CLI & compatibility)
 #[tauri::command]
 async fn connect_agent(
@@ -1222,6 +1353,7 @@ pub fn run() {
             set_stream_quality,
             set_unattended_password,
             select_display,
+            set_video_codec,
             send_key,
             send_file,
             check_permissions,

@@ -2,6 +2,7 @@ pub mod screen_capture;
 pub mod input_injection;
 pub mod clipboard;
 pub mod audio;
+pub mod wayland;
 
 pub use screen_capture::create_screen_capture;
 pub use input_injection::create_input_injector;

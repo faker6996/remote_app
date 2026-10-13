@@ -33,6 +33,8 @@ windows = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 x11rb = { version = "0.13", features = ["allow-unsafe-code", "xtest", "shm", "randr"] }
+ashpd = { version = "0.12", features = ["tokio", "tracing"] }
+pipewire = "0.10"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 core-graphics = { version = "0.23", features = ["highsierra"] }

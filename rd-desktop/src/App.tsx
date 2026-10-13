@@ -21,6 +21,8 @@ import {
   IconFileCheck,
   IconClipboardCheck,
   IconPhoneOff,
+  IconBolt,
+  IconPhoto,
 } from "@tabler/icons-react";
 
 interface ConnectionState {
@@ -129,6 +131,13 @@ function App() {
   const [fps, setFps] = useState<number>(0);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
   const [quality, setQuality] = useState<StreamQuality>("balanced");
+  const [videoCodec, setVideoCodec] = useState<"jpeg" | "h264">("h264");
+  const videoCodecRef = useRef<"jpeg" | "h264">("h264");
+  videoCodecRef.current = videoCodec;
+
+  // WebCodecs H.264 VideoDecoder state
+  const decoderRef = useRef<any>(null);
+  const hasKeyframeRef = useRef<boolean>(false);
 
   // Unattended Access states
   const [hostPassword, setHostPassword] = useState<string>("");
@@ -180,6 +189,51 @@ function App() {
   const frameCountRef = useRef<number>(0);
   const lastFpsTimeRef = useRef<number>(performance.now());
 
+  // WebCodecs VideoDecoder initialization for hardware H.264 decoding
+  const initVideoDecoder = useCallback(() => {
+    if (typeof window === "undefined" || !("VideoDecoder" in window)) {
+      console.warn("WebCodecs VideoDecoder not supported in this environment");
+      return null;
+    }
+
+    try {
+      const decoder = new (window as any).VideoDecoder({
+        output: (videoFrame: any) => {
+          if (canvasRef.current) {
+            const canvas = canvasRef.current;
+            const ctx = canvas.getContext("2d", { alpha: false });
+            if (ctx) {
+              const width = videoFrame.displayWidth || videoFrame.codedWidth;
+              const height = videoFrame.displayHeight || videoFrame.codedHeight;
+              if (canvas.width !== width || canvas.height !== height) {
+                canvas.width = width;
+                canvas.height = height;
+              }
+              ctx.drawImage(videoFrame, 0, 0);
+              frameCountRef.current += 1;
+            }
+          }
+          videoFrame.close();
+        },
+        error: (err: any) => {
+          console.error("H.264 VideoDecoder error:", err);
+          hasKeyframeRef.current = false;
+        },
+      });
+
+      decoder.configure({
+        codec: "avc1.42E01F", // H.264 Baseline Profile Level 3.1
+        optimizeForLatency: true,
+        hardwareAcceleration: "prefer-hardware",
+      });
+
+      return decoder;
+    } catch (e) {
+      console.error("Failed to initialize VideoDecoder:", e);
+      return null;
+    }
+  }, []);
+
   // Listen to Tauri backend events
   useEffect(() => {
     let unlistenConnected: (() => void) | undefined;
@@ -191,6 +245,7 @@ function App() {
     let unlistenFileProgress: (() => void) | undefined;
     let unlistenFileComplete: (() => void) | undefined;
     let unlistenTile: (() => void) | undefined;
+    let unlistenH264: (() => void) | undefined;
     let unlistenDisplayList: (() => void) | undefined;
 
     const setupListeners = async () => {
@@ -201,6 +256,7 @@ function App() {
 
       unlistenConnected = await listen<{ remote_peer_id: string }>("peer_connected", (event) => {
         setIncomingRequest(null);
+        hasKeyframeRef.current = false;
         setConnState((prev) => ({
           ...prev,
           connected: true,
@@ -211,6 +267,13 @@ function App() {
       unlistenDisconnected = await listen("peer_disconnected", () => {
         setIncomingRequest(null);
         setDisplays([]);
+        hasKeyframeRef.current = false;
+        if (decoderRef.current && decoderRef.current.state !== "closed") {
+          try {
+            decoderRef.current.close();
+          } catch (e) {}
+          decoderRef.current = null;
+        }
         setConnState((prev) => ({
           ...prev,
           connected: false,
@@ -319,6 +382,72 @@ function App() {
         frameCountRef.current += 1;
       });
 
+      // H.264 hardware-decoded video stream (WebCodecs)
+      unlistenH264 = await listen<{
+        sequence?: number;
+        timestamp?: number;
+        width: number;
+        height: number;
+        data_base64?: string;
+        nal_base64?: string;
+      }>("h264_frame", (event) => {
+        if (videoCodecRef.current !== "h264") return;
+        const b64 = event.payload.data_base64 || event.payload.nal_base64;
+        if (!b64) return;
+
+        try {
+          if (!decoderRef.current || decoderRef.current.state === "closed") {
+            decoderRef.current = initVideoDecoder();
+            hasKeyframeRef.current = false;
+          }
+          const decoder = decoderRef.current;
+          if (!decoder || decoder.state !== "configured") return;
+
+          const binaryStr = atob(b64);
+          const len = binaryStr.length;
+          const bytes = new Uint8Array(len);
+          for (let i = 0; i < len; i++) {
+            bytes[i] = binaryStr.charCodeAt(i);
+          }
+
+          // Check if NAL unit is IDR (keyframe type 5) or SPS (type 7)
+          let isKey = false;
+          for (let i = 0; i < bytes.length - 4; i++) {
+            if (bytes[i] === 0 && bytes[i + 1] === 0 && bytes[i + 2] === 1) {
+              const nalType = bytes[i + 3] & 0x1f;
+              if (nalType === 5 || nalType === 7) {
+                isKey = true;
+                break;
+              }
+            } else if (bytes[i] === 0 && bytes[i + 1] === 0 && bytes[i + 2] === 0 && bytes[i + 3] === 1) {
+              const nalType = bytes[i + 4] & 0x1f;
+              if (nalType === 5 || nalType === 7) {
+                isKey = true;
+                break;
+              }
+            }
+          }
+
+          if (!hasKeyframeRef.current) {
+            if (!isKey) {
+              // Wait until initial keyframe is received
+              return;
+            }
+            hasKeyframeRef.current = true;
+          }
+
+          const chunk = new (window as any).EncodedVideoChunk({
+            type: isKey ? "key" : "delta",
+            timestamp: performance.now() * 1000,
+            data: bytes,
+          });
+
+          decoder.decode(chunk);
+        } catch (err) {
+          console.error("H.264 decode error:", err);
+        }
+      });
+
       // Multi-monitor display list from remote host
       unlistenDisplayList = await listen<DisplayInfo[]>("display_list", (event) => {
         if (event.payload && event.payload.length > 0) {
@@ -343,9 +472,10 @@ function App() {
       if (unlistenFileProgress) unlistenFileProgress();
       if (unlistenFileComplete) unlistenFileComplete();
       if (unlistenTile) unlistenTile();
+      if (unlistenH264) unlistenH264();
       if (unlistenDisplayList) unlistenDisplayList();
     };
-  }, [isAudioMuted]);
+  }, [isAudioMuted, initVideoDecoder]);
 
   // Auto initialize host on startup to get Peer ID immediately
   useEffect(() => {
@@ -421,28 +551,30 @@ function App() {
     }
 
     try {
-      const frame = await invoke<{ width: number; height: number; jpeg_base64: string } | null>("get_frame");
+      if (videoCodecRef.current === "jpeg") {
+        const frame = await invoke<{ width: number; height: number; jpeg_base64: string } | null>("get_frame");
 
-      if (frame && canvasRef.current && frame.jpeg_base64) {
-        const canvas = canvasRef.current;
-        const ctx = canvas.getContext("2d", { alpha: false });
-        if (ctx) {
-          const { width, height, jpeg_base64 } = frame;
+        if (frame && canvasRef.current && frame.jpeg_base64) {
+          const canvas = canvasRef.current;
+          const ctx = canvas.getContext("2d", { alpha: false });
+          if (ctx) {
+            const { width, height, jpeg_base64 } = frame;
 
-          // Resize canvas if frame dimensions changed
-          if (canvas.width !== width || canvas.height !== height) {
-            canvas.width = width;
-            canvas.height = height;
+            // Resize canvas if frame dimensions changed
+            if (canvas.width !== width || canvas.height !== height) {
+              canvas.width = width;
+              canvas.height = height;
+            }
+
+            const img = new Image();
+            img.onload = () => {
+              ctx.drawImage(img, 0, 0);
+            };
+            img.src = `data:image/jpeg;base64,${jpeg_base64}`;
+
+            // Update FPS counter on real received frame
+            frameCountRef.current += 1;
           }
-
-          const img = new Image();
-          img.onload = () => {
-            ctx.drawImage(img, 0, 0);
-          };
-          img.src = `data:image/jpeg;base64,${jpeg_base64}`;
-
-          // Update FPS counter on real received frame
-          frameCountRef.current += 1;
         }
       }
 
@@ -576,6 +708,36 @@ function App() {
     }
   };
 
+  // Switch video codec dynamically ("h264" or "jpeg")
+  const handleToggleCodec = async (newCodec: "jpeg" | "h264") => {
+    setVideoCodec(newCodec);
+    hasKeyframeRef.current = false;
+    if (newCodec === "h264") {
+      if (!decoderRef.current || decoderRef.current.state === "closed") {
+        decoderRef.current = initVideoDecoder();
+      } else if (decoderRef.current.state === "configured") {
+        decoderRef.current.reset();
+        decoderRef.current.configure({
+          codec: "avc1.42E01F",
+          optimizeForLatency: true,
+          hardwareAcceleration: "prefer-hardware",
+        });
+      }
+    } else {
+      if (decoderRef.current && decoderRef.current.state !== "closed") {
+        try {
+          decoderRef.current.close();
+        } catch (e) {}
+        decoderRef.current = null;
+      }
+    }
+    try {
+      await invoke("set_video_codec", { codec: newCodec });
+    } catch (err) {
+      console.error("Failed to switch video codec:", err);
+    }
+  };
+
   // Disconnect / stop session
   const handleStopConnection = async () => {
     // 1. Immediately reset connection state in UI (0ms delay)
@@ -587,6 +749,13 @@ function App() {
     setFps(0);
     setIncomingRequest(null);
     setDisplays([]);
+    hasKeyframeRef.current = false;
+    if (decoderRef.current && decoderRef.current.state !== "closed") {
+      try {
+        decoderRef.current.close();
+      } catch (e) {}
+      decoderRef.current = null;
+    }
 
     // 2. Shut down backend WebRTC and notify remote peer
     try {
@@ -880,6 +1049,45 @@ function App() {
             </div>
           </div>
 
+          {/* Video Codec Selector */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-xs text-muted-foreground ml-1">
+              <div className="flex items-center gap-1.5">
+                <IconBolt className="size-3.5 text-primary" />
+                <span>Video Codec</span>
+              </div>
+              <span className="text-[10px] font-mono text-primary/80">
+                {videoCodec === "h264" ? "H.264 HW" : "JPEG Tile"}
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-1 bg-muted/40 p-1 rounded-xl border border-border text-xs">
+              <button
+                onClick={() => handleToggleCodec("h264")}
+                className={`py-1.5 rounded-lg font-medium transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  videoCodec === "h264"
+                    ? "bg-background text-foreground shadow-xs font-semibold text-emerald-400"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+                title="H.264 Video Stream: Nén siêu nhẹ, tối ưu băng thông (WebCodecs HW decode)"
+              >
+                <IconBolt className="size-3" />
+                <span>H.264</span>
+              </button>
+              <button
+                onClick={() => handleToggleCodec("jpeg")}
+                className={`py-1.5 rounded-lg font-medium transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  videoCodec === "jpeg"
+                    ? "bg-background text-foreground shadow-xs font-semibold text-amber-400"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+                title="JPEG Tile Stream: Khung hình JPEG truyền thống"
+              >
+                <IconPhoto className="size-3" />
+                <span>JPEG Tile</span>
+              </button>
+            </div>
+          </div>
+
           {/* Mode-specific UI */}
           {mode === "host" ? (
             <div className="space-y-4">
@@ -1108,6 +1316,28 @@ function App() {
               }
             >
               <span>{controlMode === "same_pc" ? "🖱️ Test cùng máy (Click-Only)" : "🌐 Khác máy (Full)"}</span>
+            </button>
+
+            {/* Video Codec Hot-Toggle */}
+            <button
+              onClick={() => handleToggleCodec(videoCodec === "h264" ? "jpeg" : "h264")}
+              className={`px-3 py-1.5 rounded-full glass border text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-xl ${
+                videoCodec === "h264"
+                  ? "text-emerald-400 border-emerald-500/50 bg-emerald-500/10 font-semibold"
+                  : "text-amber-400 border-amber-500/50 bg-amber-500/10 font-semibold"
+              }`}
+              title={
+                videoCodec === "h264"
+                  ? "Đang dùng H.264 Stream (Nén phần cứng, siêu mượt - Bấm để chuyển JPEG)"
+                  : "Đang dùng JPEG Tile Stream (Bấm để chuyển H.264)"
+              }
+            >
+              {videoCodec === "h264" ? (
+                <IconBolt className="size-3.5 text-emerald-400" />
+              ) : (
+                <IconPhoto className="size-3.5 text-amber-400" />
+              )}
+              <span>{videoCodec === "h264" ? "⚡ H.264" : "🖼️ JPEG"}</span>
             </button>
 
             {/* Multi-Monitor Selector (displays when host has >1 display) */}

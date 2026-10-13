@@ -3,6 +3,8 @@ mod windows;
 
 #[cfg(target_os = "linux")]
 mod linux;
+#[cfg(target_os = "linux")]
+pub mod wayland;
 
 #[cfg(target_os = "macos")]
 pub mod macos;
@@ -12,6 +14,8 @@ pub use self::windows::WindowsScreenCapture;
 
 #[cfg(target_os = "linux")]
 pub use self::linux::LinuxScreenCapture;
+#[cfg(target_os = "linux")]
+pub use self::wayland::WaylandScreenCapture;
 
 #[cfg(target_os = "macos")]
 pub use self::macos::MacOSScreenCapture;
@@ -28,6 +32,15 @@ pub fn create_screen_capture() -> Result<Arc<tokio::sync::Mutex<dyn ScreenCaptur
     
     #[cfg(target_os = "linux")]
     {
+        if crate::wayland::is_wayland() {
+            tracing::info!("Detected Wayland session: using WaylandScreenCapture (Portal + PipeWire)");
+            match WaylandScreenCapture::new() {
+                Ok(cap) => return Ok(Arc::new(tokio::sync::Mutex::new(cap))),
+                Err(e) => {
+                    tracing::warn!("Failed to initialize WaylandScreenCapture ({}), falling back to X11", e);
+                }
+            }
+        }
         Ok(Arc::new(tokio::sync::Mutex::new(LinuxScreenCapture::new()?)))
     }
     

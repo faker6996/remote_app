@@ -3,6 +3,8 @@ mod windows;
 
 #[cfg(target_os = "linux")]
 mod linux;
+#[cfg(target_os = "linux")]
+pub mod wayland;
 
 #[cfg(target_os = "macos")]
 mod macos;
@@ -12,6 +14,8 @@ pub use self::windows::WindowsInputInjector;
 
 #[cfg(target_os = "linux")]
 pub use self::linux::LinuxInputInjector;
+#[cfg(target_os = "linux")]
+pub use self::wayland::WaylandInputInjector;
 
 #[cfg(target_os = "macos")]
 pub use self::macos::MacOSInputInjector;
@@ -28,6 +32,15 @@ pub fn create_input_injector() -> Result<Arc<tokio::sync::Mutex<dyn InputInjecto
     
     #[cfg(target_os = "linux")]
     {
+        if crate::wayland::is_wayland() {
+            tracing::info!("Detected Wayland session: using WaylandInputInjector (XDG Desktop Portal)");
+            match WaylandInputInjector::new() {
+                Ok(inj) => return Ok(Arc::new(tokio::sync::Mutex::new(inj))),
+                Err(e) => {
+                    tracing::warn!("Failed to initialize WaylandInputInjector ({}), falling back to X11/XTest", e);
+                }
+            }
+        }
         Ok(Arc::new(tokio::sync::Mutex::new(LinuxInputInjector::new()?)))
     }
     
