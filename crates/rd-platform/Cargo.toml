@@ -25,7 +25,6 @@ image = { workspace = true }
 arboard = { workspace = true }
 
 # Audio
-[target.'cfg(any(target_os = "macos", target_os = "windows"))'.dependencies]
 cpal = { workspace = true }
 
 # Platform-specific dependencies

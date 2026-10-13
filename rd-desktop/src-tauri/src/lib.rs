@@ -329,22 +329,29 @@ async fn start_host(
             s.stream_quality.clone()
         };
         
+        let capture = match rd_platform::create_screen_capture() {
+            Ok(c) => c,
+            Err(e) => {
+                error!("Failed to create screen capture: {}", e);
+                return;
+            }
+        };
+
+        // Send display list to viewer for multi-monitor support
+        if let Ok(displays) = capture.lock().await.get_displays().await {
+            let _ = transport.send_msg(ProtocolMessage::DisplayListResponse { displays }).await;
+        }
+
+        let capture_for_task = capture.clone();
+        let capture_for_select = capture.clone();
+
         let mut capture_task = tokio::spawn(async move {
-            let capture = match rd_platform::create_screen_capture() {
-                Ok(c) => c,
-                Err(e) => {
-                    error!("Failed to create screen capture: {}", e);
-                    return;
-                }
-            };
-            
             let mut encoder = rd_codec::JpegEncoder::with_quality(quality_ref.load(Ordering::Relaxed));
             let mut ticker = tokio::time::interval(tokio::time::Duration::from_millis(33)); // ~30 FPS
             ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             let mut seq = 0u64;
             let mut current_q = quality_ref.load(Ordering::Relaxed);
-            let mut last_frame_data: Vec<u8> = Vec::new();
-            let mut has_previous_frame = false;
+            let mut tile_mgr = rd_codec::TileManager::new(128);
             let mut idle_ticks: u32 = 0;
             
             info!("Screen capture loop started (target: 30 FPS)");
@@ -363,7 +370,7 @@ async fn start_host(
                     });
                 }
                 
-                let frame = match capture.lock().await.capture().await {
+                let frame = match capture_for_task.lock().await.capture().await {
                     Ok(f) => f,
                     Err(e) => {
                         debug!("Screen capture frame dropped: {}", e);
@@ -371,19 +378,50 @@ async fn start_host(
                     }
                 };
 
-                // Delta change detection: check if frame is identical to previous capture
-                let is_same = has_previous_frame && last_frame_data == frame.data;
-                if is_same {
-                    idle_ticks += 1;
-                    // When screen is static, throttle to 1 keepalive frame per second (every 30 ticks)
-                    if idle_ticks % 30 != 0 {
-                        continue;
+                // Tile-based dirty rectangle detection
+                let dirty_opt = tile_mgr.detect_dirty_tiles(&frame);
+                match dirty_opt {
+                    Some(dirty_tiles) => {
+                        if dirty_tiles.is_empty() {
+                            idle_ticks += 1;
+                            // When screen is static, throttle to 1 keepalive frame per second
+                            if idle_ticks % 30 != 0 {
+                                continue;
+                            }
+                        } else {
+                            idle_ticks = 0;
+                            let mut tile_send_failed = false;
+                            for tile in dirty_tiles {
+                                if let Ok(tile_jpeg) = rd_codec::JpegEncoder::encode_bgra_subimage(
+                                    tile.width, tile.height, &tile.bgra_data, current_q
+                                ) {
+                                    let msg = ProtocolMessage::ScreenTile {
+                                        sequence: seq,
+                                        timestamp: frame.timestamp,
+                                        x: tile.x,
+                                        y: tile.y,
+                                        width: tile.width,
+                                        height: tile.height,
+                                        data: tile_jpeg,
+                                        format: FrameFormat::Jpeg,
+                                    };
+                                    if let Err(e) = transport_send.send_msg(msg).await {
+                                        error!("Failed to send tile over WebRTC: {}", e);
+                                        tile_send_failed = true;
+                                        break;
+                                    }
+                                }
+                            }
+                            if tile_send_failed {
+                                break;
+                            }
+                            seq += 1;
+                            continue;
+                        }
                     }
-                } else {
-                    idle_ticks = 0;
-                    last_frame_data.clear();
-                    last_frame_data.extend_from_slice(&frame.data);
-                    has_previous_frame = true;
+                    None => {
+                        idle_ticks = 0;
+                    }
                 }
                 
                 let jpeg_bytes = match encoder.encode(&frame).await {
@@ -479,10 +517,11 @@ async fn start_host(
             }
         });
 
-        // 4. Remote message receiver task (input injection, clipboard, file transfer)
+        // 4. Remote message receiver task (input injection, clipboard, file transfer, multi-monitor)
         let transport_recv = transport.clone();
         let app_handle_for_recv = app_handle_clone.clone();
         let clip_mgr_for_recv = clip_mgr_host.clone();
+        let capture_for_select_recv = capture_for_select.clone();
         let mut receiver_task = tokio::spawn(async move {
             let injector = if allow_input {
                 rd_platform::create_input_injector().ok()
@@ -505,6 +544,12 @@ async fn start_host(
                     ProtocolMessage::SessionEnd { reason, .. } => {
                         info!("Remote viewer ended session: {}", reason);
                         break;
+                    }
+                    ProtocolMessage::SelectDisplay { display_id } => {
+                        info!("Remote viewer requested switch to display ID: {}", display_id);
+                        if let Err(e) = capture_for_select_recv.lock().await.set_target_display(*display_id).await {
+                            error!("Failed to switch display to {}: {}", display_id, e);
+                        }
                     }
                     ProtocolMessage::InputEvent { event, .. } => {
                         if let Some(ref inj) = injector {
@@ -789,6 +834,21 @@ async fn connect_peer(
                         }
                     }
                 }
+                ProtocolMessage::ScreenTile { x, y, width, height, data, .. } => {
+                    use base64::prelude::*;
+                    let jpeg_b64 = BASE64_STANDARD.encode(&data);
+                    let _ = app_handle_clone.emit("screen_tile", serde_json::json!({
+                        "x": x,
+                        "y": y,
+                        "width": width,
+                        "height": height,
+                        "jpeg_base64": jpeg_b64,
+                    }));
+                }
+                ProtocolMessage::DisplayListResponse { displays } => {
+                    info!("Received display list from host: {} displays", displays.len());
+                    let _ = app_handle_clone.emit("display_list", displays);
+                }
                 ProtocolMessage::AudioFrame { sample_rate, channels, data, .. } => {
                     let _ = app_handle_clone.emit("remote_audio_frame", serde_json::json!({
                         "sample_rate": sample_rate,
@@ -1063,6 +1123,21 @@ async fn send_key(
     Ok(())
 }
 
+/// Select target display for remote host screen capture (multi-monitor)
+#[tauri::command]
+async fn select_display(
+    display_id: u32,
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+) -> Result<(), String> {
+    let app_state = state.lock().await;
+    if let Some(transport) = &app_state.webrtc_transport {
+        let msg = ProtocolMessage::SelectDisplay { display_id };
+        transport.send_msg(msg).await.map_err(|e| format!("Failed to send SelectDisplay: {}", e))?;
+        info!("Sent SelectDisplay to remote host: {}", display_id);
+    }
+    Ok(())
+}
+
 // Legacy QUIC connection (kept for CLI & compatibility)
 #[tauri::command]
 async fn connect_agent(
@@ -1146,6 +1221,7 @@ pub fn run() {
             respond_connection_request,
             set_stream_quality,
             set_unattended_password,
+            select_display,
             send_key,
             send_file,
             check_permissions,

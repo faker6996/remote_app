@@ -1,7 +1,7 @@
 use async_trait::async_trait;
-use image::{ImageBuffer, Rgba, codecs::jpeg::JpegEncoder as ImageJpegEncoder, ImageEncoder};
+use image::{codecs::jpeg::JpegEncoder as ImageJpegEncoder, ImageEncoder};
 use std::io::Cursor;
-use tracing::{debug, warn};
+use tracing::debug;
 
 use rd_core::domain::{
     models::*,
@@ -24,6 +24,35 @@ impl JpegEncoder {
         config.codec = CodecType::Jpeg;
         config.quality = quality.clamp(1, 100);
         Self { config }
+    }
+
+    pub fn quality(&self) -> u8 {
+        self.config.quality
+    }
+
+    pub fn encode_bgra_subimage(
+        width: u32,
+        height: u32,
+        bgra_data: &[u8],
+        quality: u8,
+    ) -> std::result::Result<Vec<u8>, CodecError> {
+        let pixel_count = (width * height) as usize;
+        let expected_raw = pixel_count * 4;
+        if bgra_data.len() < expected_raw {
+            return Err(CodecError::EncodingFailed("Buffer too small for subimage".into()));
+        }
+        let mut rgb = Vec::with_capacity(pixel_count * 3);
+        for chunk in bgra_data[..expected_raw].chunks_exact(4) {
+            rgb.push(chunk[2]);
+            rgb.push(chunk[1]);
+            rgb.push(chunk[0]);
+        }
+        let mut buffer = Cursor::new(Vec::new());
+        let encoder = ImageJpegEncoder::new_with_quality(&mut buffer, quality);
+        encoder
+            .write_image(&rgb, width, height, image::ExtendedColorType::Rgb8)
+            .map_err(|e| CodecError::EncodingFailed(e.to_string()))?;
+        Ok(buffer.into_inner())
     }
 }
 

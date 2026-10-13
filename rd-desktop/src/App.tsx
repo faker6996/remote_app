@@ -33,6 +33,16 @@ interface ConnectionState {
 type ConnectionMode = "host" | "viewer";
 type StreamQuality = "speed" | "balanced" | "best";
 
+interface DisplayInfo {
+  id: number;
+  name: string;
+  width: number;
+  height: number;
+  x: number;
+  y: number;
+  is_primary: boolean;
+}
+
 // W3C KeyboardEvent.code to macOS CGKeyCode mapping
 const getMacKeyCode = (code: string): number | null => {
   switch (code) {
@@ -159,6 +169,10 @@ function App() {
     accessibility: true,
   });
 
+  // Multi-Monitor state
+  const [displays, setDisplays] = useState<DisplayInfo[]>([]);
+  const [selectedDisplayId, setSelectedDisplayId] = useState<number>(0);
+
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const animationFrameRef = useRef<number>(0);
@@ -176,6 +190,8 @@ function App() {
     let unlistenClipboard: (() => void) | undefined;
     let unlistenFileProgress: (() => void) | undefined;
     let unlistenFileComplete: (() => void) | undefined;
+    let unlistenTile: (() => void) | undefined;
+    let unlistenDisplayList: (() => void) | undefined;
 
     const setupListeners = async () => {
       // Incoming request from viewer wanting to connect
@@ -194,6 +210,7 @@ function App() {
 
       unlistenDisconnected = await listen("peer_disconnected", () => {
         setIncomingRequest(null);
+        setDisplays([]);
         setConnState((prev) => ({
           ...prev,
           connected: false,
@@ -280,6 +297,38 @@ function App() {
         });
         setTimeout(() => setTransferCompleteMsg(null), 6000);
       });
+
+      // Screen tile (dirty rectangle partial update)
+      unlistenTile = await listen<{
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+        jpeg_base64: string;
+      }>("screen_tile", (event) => {
+        if (!canvasRef.current) return;
+        const { x, y, width, height, jpeg_base64 } = event.payload;
+        const canvas = canvasRef.current;
+        const ctx = canvas.getContext("2d", { alpha: false });
+        if (!ctx) return;
+        const img = new Image();
+        img.onload = () => {
+          ctx.drawImage(img, x, y, width, height);
+        };
+        img.src = `data:image/jpeg;base64,${jpeg_base64}`;
+        frameCountRef.current += 1;
+      });
+
+      // Multi-monitor display list from remote host
+      unlistenDisplayList = await listen<DisplayInfo[]>("display_list", (event) => {
+        if (event.payload && event.payload.length > 0) {
+          setDisplays(event.payload);
+          const primary = event.payload.find((d) => d.is_primary);
+          if (primary) {
+            setSelectedDisplayId(primary.id);
+          }
+        }
+      });
     };
 
     setupListeners();
@@ -293,6 +342,8 @@ function App() {
       if (unlistenClipboard) unlistenClipboard();
       if (unlistenFileProgress) unlistenFileProgress();
       if (unlistenFileComplete) unlistenFileComplete();
+      if (unlistenTile) unlistenTile();
+      if (unlistenDisplayList) unlistenDisplayList();
     };
   }, [isAudioMuted]);
 
@@ -515,6 +566,16 @@ function App() {
     }
   };
 
+  // Switch remote monitor (multi-monitor)
+  const handleSelectDisplay = async (displayId: number) => {
+    try {
+      setSelectedDisplayId(displayId);
+      await invoke("select_display", { displayId });
+    } catch (err) {
+      console.error("Failed to switch display:", err);
+    }
+  };
+
   // Disconnect / stop session
   const handleStopConnection = async () => {
     // 1. Immediately reset connection state in UI (0ms delay)
@@ -525,6 +586,7 @@ function App() {
     }));
     setFps(0);
     setIncomingRequest(null);
+    setDisplays([]);
 
     // 2. Shut down backend WebRTC and notify remote peer
     try {
@@ -1047,6 +1109,25 @@ function App() {
             >
               <span>{controlMode === "same_pc" ? "🖱️ Test cùng máy (Click-Only)" : "🌐 Khác máy (Full)"}</span>
             </button>
+
+            {/* Multi-Monitor Selector (displays when host has >1 display) */}
+            {displays.length > 1 && (
+              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full glass border border-primary/40 shadow-xl text-xs text-primary">
+                <span>🖥️</span>
+                <select
+                  value={selectedDisplayId}
+                  onChange={(e) => handleSelectDisplay(Number(e.target.value))}
+                  className="bg-transparent text-xs text-foreground font-medium focus:outline-none cursor-pointer"
+                  title="Switch Monitor"
+                >
+                  {displays.map((disp) => (
+                    <option key={disp.id} value={disp.id} className="bg-background text-foreground">
+                      {disp.name} ({disp.width}x{disp.height})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             {/* Audio Stream Mute / Unmute */}
             <button

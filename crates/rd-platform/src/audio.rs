@@ -1,7 +1,6 @@
 use tokio::sync::mpsc;
 use tracing::{error, info, warn};
 
-#[cfg(any(target_os = "macos", target_os = "windows"))]
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
 /// Cross-platform audio capture service handle (Send + Sync)
@@ -12,7 +11,6 @@ pub struct AudioCaptureService {
 impl AudioCaptureService {
     /// Start capturing audio on a dedicated OS thread
     pub fn start_capture() -> (Self, Option<mpsc::UnboundedReceiver<Vec<u8>>>) {
-        #[cfg(any(target_os = "macos", target_os = "windows"))]
         {
             let (pcm_tx, pcm_rx) = mpsc::unbounded_channel();
             let (stop_tx, mut stop_rx) = tokio::sync::oneshot::channel::<()>();
@@ -99,12 +97,6 @@ impl AudioCaptureService {
             });
 
             (Self { stop_tx: Some(stop_tx) }, Some(pcm_rx))
-        }
-
-        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-        {
-            warn!("Audio capture not supported on this platform build");
-            (Self { stop_tx: None }, None)
         }
     }
 }

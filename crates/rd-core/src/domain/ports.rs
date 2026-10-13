@@ -119,6 +119,22 @@ pub enum ProtocolMessage {
         height: u32,
         format: FrameFormat,
     },
+    ScreenTile {
+        sequence: u64,
+        timestamp: u64,
+        x: u32,
+        y: u32,
+        width: u32,
+        height: u32,
+        data: Vec<u8>,
+        format: FrameFormat,
+    },
+    SelectDisplay {
+        display_id: u32,
+    },
+    DisplayListResponse {
+        displays: Vec<DisplayInfo>,
+    },
     
     // Input
     InputEvent {
